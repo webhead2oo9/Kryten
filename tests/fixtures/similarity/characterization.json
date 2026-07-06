@@ -1,0 +1,813 @@
+{
+  "generatedAt": "commit 281e341 (pre-refactor baseline)",
+  "cases": [
+    {
+      "name": "plain",
+      "input": "My Quest 3 keeps disconnecting from Virtual Desktop every few minutes. Any ideas?",
+      "normalized": "my quest3 keeps disconnecting from virtualdesktop every few minutes any ideas",
+      "tokens": [
+        "disconnecting",
+        "disconnecting_virtualdesktop",
+        "every",
+        "every_few",
+        "few",
+        "few_minutes",
+        "ideas",
+        "keeps",
+        "keeps_disconnecting",
+        "minutes",
+        "minutes_ideas",
+        "quest3",
+        "quest3_keeps",
+        "virtualdesktop",
+        "virtualdesktop_every"
+      ],
+      "deltaTokens": [
+        "quest3",
+        "keeps",
+        "disconnecting",
+        "virtualdesktop",
+        "every",
+        "few",
+        "minutes.",
+        "ideas"
+      ]
+    },
+    {
+      "name": "plain-variant",
+      "input": "my quest3 keeps disconnecting from vd every few minutes... any ideas???",
+      "normalized": "my quest3 keeps disconnecting from virtualdesktop every few minutes any ideas",
+      "tokens": [
+        "disconnecting",
+        "disconnecting_virtualdesktop",
+        "every",
+        "every_few",
+        "few",
+        "few_minutes",
+        "ideas",
+        "keeps",
+        "keeps_disconnecting",
+        "minutes",
+        "minutes_ideas",
+        "quest3",
+        "quest3_keeps",
+        "virtualdesktop",
+        "virtualdesktop_every"
+      ],
+      "deltaTokens": [
+        "quest3",
+        "keeps",
+        "disconnecting",
+        "virtualdesktop",
+        "every",
+        "few",
+        "minutes...",
+        "ideas"
+      ]
+    },
+    {
+      "name": "canonical-mix",
+      "input": "Does the Meta Quest Pro work with wi-fi 6E routers on 5 GHz?",
+      "normalized": "does the questpro work with wifi 6e routers on 5ghz",
+      "tokens": [
+        "5ghz",
+        "6e",
+        "6e_routers",
+        "questpro",
+        "questpro_work",
+        "routers",
+        "routers_5ghz",
+        "wifi",
+        "wifi_6e",
+        "work",
+        "work_wifi"
+      ],
+      "deltaTokens": [
+        "questpro",
+        "work",
+        "wifi",
+        "6e",
+        "routers",
+        "5ghz"
+      ]
+    },
+    {
+      "name": "bullet-list",
+      "input": "* bullet one\n* bullet two\nplain trailing line",
+      "normalized": "plain trailing line",
+      "tokens": [
+        "line",
+        "plain",
+        "plain_trailing",
+        "trailing",
+        "trailing_line"
+      ],
+      "deltaTokens": [
+        "bullet",
+        "one",
+        "bullet",
+        "two",
+        "plain",
+        "trailing",
+        "line"
+      ]
+    },
+    {
+      "name": "quoted-reply",
+      "input": "> quoted reply line\nactual question about pc vr streaming",
+      "normalized": "actual question about pcvr streaming",
+      "tokens": [
+        "about",
+        "about_pcvr",
+        "actual",
+        "actual_question",
+        "pcvr",
+        "pcvr_streaming",
+        "question",
+        "question_about",
+        "streaming"
+      ],
+      "deltaTokens": [
+        "actual",
+        "question",
+        "about",
+        "pcvr",
+        "streaming"
+      ]
+    },
+    {
+      "name": "with-url",
+      "input": "Check https://example.com/some/long/url?with=params and tell me",
+      "normalized": "check and tell me",
+      "tokens": [
+        "check",
+        "check_tell",
+        "tell"
+      ],
+      "deltaTokens": [
+        "check",
+        "tell"
+      ]
+    },
+    {
+      "name": "mentions-emoji",
+      "input": "Hey <@!123456789> can you look at <#987654321> please <a:wave:112233>",
+      "normalized": "hey can you look at please a wave 112233",
+      "tokens": [
+        "112233",
+        "look",
+        "look_wave",
+        "wave",
+        "wave_112233"
+      ],
+      "deltaTokens": [
+        "look"
+      ]
+    },
+    {
+      "name": "code-fence",
+      "input": "```js\nconst x = 1;\n```\nWhy does `adb devices` show nothing?",
+      "normalized": "const x 1 why does adb devices show nothing",
+      "tokens": [
+        "1",
+        "1_why",
+        "adb",
+        "adb_devices",
+        "const",
+        "const_x",
+        "devices",
+        "devices_show",
+        "nothing",
+        "show",
+        "show_nothing",
+        "why",
+        "why_adb",
+        "x",
+        "x_1"
+      ],
+      "deltaTokens": [
+        "why",
+        "show",
+        "nothing"
+      ]
+    },
+    {
+      "name": "nfkc",
+      "input": "ｖｉｒｔｕａｌ　ｄｅｓｋｔｏｐ ½ Ⅷ ﬁne",
+      "normalized": "virtualdesktop 1 2 viii fine",
+      "tokens": [
+        "1",
+        "1_2",
+        "2",
+        "2_viii",
+        "fine",
+        "viii",
+        "viii_fine",
+        "virtualdesktop",
+        "virtualdesktop_1"
+      ],
+      "deltaTokens": [
+        "virtualdesktop",
+        "1",
+        "2",
+        "viii",
+        "fine"
+      ]
+    },
+    {
+      "name": "canonical-storm",
+      "input": "wi-fi wifi wi fi WiFi 2.4 GHz 2,4ghz 5ghz pc vr pcvr oculus link link cable mq3 mq pro",
+      "normalized": "wifi wifi wifi wifi 2 4ghz 2 4ghz 5ghz pcvr pcvr linkcable linkcable quest3 questpro",
+      "tokens": [
+        "2",
+        "2_4ghz",
+        "4ghz",
+        "4ghz_2",
+        "4ghz_5ghz",
+        "5ghz",
+        "5ghz_pcvr",
+        "linkcable",
+        "linkcable_linkcable",
+        "linkcable_quest3",
+        "pcvr",
+        "pcvr_linkcable",
+        "pcvr_pcvr",
+        "quest3",
+        "quest3_questpro",
+        "questpro",
+        "wifi",
+        "wifi_2",
+        "wifi_wifi"
+      ],
+      "deltaTokens": [
+        "wifi",
+        "wifi",
+        "wifi",
+        "wifi",
+        "2.4ghz",
+        "2.4ghz",
+        "5ghz",
+        "pcvr",
+        "pcvr",
+        "linkcable",
+        "linkcable",
+        "quest3",
+        "questpro"
+      ]
+    },
+    {
+      "name": "tiny",
+      "input": "ab",
+      "normalized": "ab",
+      "tokens": [
+        "ab"
+      ],
+      "deltaTokens": [
+        "ab"
+      ]
+    },
+    {
+      "name": "whitespace-only",
+      "input": "   ",
+      "normalized": "",
+      "tokens": [],
+      "deltaTokens": []
+    },
+    {
+      "name": "all-stopwords",
+      "input": "the a an and or of to is in on",
+      "normalized": "the a an and or of to is in on",
+      "tokens": [],
+      "deltaTokens": []
+    },
+    {
+      "name": "long-help",
+      "input": "Having constant stuttering and packet loss when streaming PCVR over Virtual Desktop on my Quest 3. My router is right next to me on a dedicated 5GHz network, nothing else connected. Tried lowering bitrate and changing codec, still the same problem every session.",
+      "normalized": "having constant stuttering and packet loss when streaming pcvr over virtualdesktop on my quest3 my router is right next to me on a dedicated 5ghz network nothing else connected tried lowering bitrate and changing codec still the same problem every session",
+      "tokens": [
+        "5ghz",
+        "5ghz_network",
+        "bitrate",
+        "bitrate_changing",
+        "changing",
+        "changing_codec",
+        "codec",
+        "codec_same",
+        "connected",
+        "connected_tried",
+        "constant",
+        "constant_stuttering",
+        "dedicated",
+        "dedicated_5ghz",
+        "else",
+        "else_connected",
+        "every",
+        "every_session",
+        "having",
+        "having_constant",
+        "loss",
+        "loss_when",
+        "lowering",
+        "lowering_bitrate",
+        "network",
+        "network_nothing",
+        "next",
+        "next_dedicated",
+        "nothing",
+        "nothing_else",
+        "over",
+        "over_virtualdesktop",
+        "packet",
+        "packet_loss",
+        "pcvr",
+        "pcvr_over",
+        "problem",
+        "problem_every",
+        "quest3",
+        "quest3_router",
+        "right",
+        "right_next",
+        "router",
+        "router_right",
+        "same",
+        "same_problem",
+        "session",
+        "streaming",
+        "streaming_pcvr",
+        "stuttering",
+        "stuttering_packet",
+        "tried",
+        "tried_lowering",
+        "virtualdesktop",
+        "virtualdesktop_quest3",
+        "when",
+        "when_streaming"
+      ],
+      "deltaTokens": [
+        "having",
+        "constant",
+        "stuttering",
+        "packet",
+        "loss",
+        "when",
+        "streaming",
+        "pcvr",
+        "over",
+        "virtualdesktop",
+        "quest3.",
+        "router",
+        "right",
+        "next",
+        "dedicated",
+        "5ghz",
+        "network",
+        "nothing",
+        "else",
+        "connected.",
+        "tried",
+        "lowering",
+        "bitrate",
+        "changing",
+        "codec",
+        "same",
+        "problem",
+        "every",
+        "session."
+      ]
+    },
+    {
+      "name": "long-help-variant",
+      "input": "Having constant stutter and packet loss when streaming PCVR through Virtual Desktop on Quest 3. The router is right next to me on a dedicated 5GHz network, nothing else is connected. I tried lowering the bitrate and changing codec but still the same problem every session.",
+      "normalized": "having constant stutter and packet loss when streaming pcvr through virtualdesktop on quest3 the router is right next to me on a dedicated 5ghz network nothing else is connected i tried lowering the bitrate and changing codec but still the same problem every session",
+      "tokens": [
+        "5ghz",
+        "5ghz_network",
+        "bitrate",
+        "bitrate_changing",
+        "changing",
+        "changing_codec",
+        "codec",
+        "codec_same",
+        "connected",
+        "connected_tried",
+        "constant",
+        "constant_stutter",
+        "dedicated",
+        "dedicated_5ghz",
+        "else",
+        "else_connected",
+        "every",
+        "every_session",
+        "having",
+        "having_constant",
+        "loss",
+        "loss_when",
+        "lowering",
+        "lowering_bitrate",
+        "network",
+        "network_nothing",
+        "next",
+        "next_dedicated",
+        "nothing",
+        "nothing_else",
+        "packet",
+        "packet_loss",
+        "pcvr",
+        "pcvr_through",
+        "problem",
+        "problem_every",
+        "quest3",
+        "quest3_router",
+        "right",
+        "right_next",
+        "router",
+        "router_right",
+        "same",
+        "same_problem",
+        "session",
+        "streaming",
+        "streaming_pcvr",
+        "stutter",
+        "stutter_packet",
+        "through",
+        "through_virtualdesktop",
+        "tried",
+        "tried_lowering",
+        "virtualdesktop",
+        "virtualdesktop_quest3",
+        "when",
+        "when_streaming"
+      ],
+      "deltaTokens": [
+        "having",
+        "constant",
+        "stutter",
+        "packet",
+        "loss",
+        "when",
+        "streaming",
+        "pcvr",
+        "through",
+        "virtualdesktop",
+        "quest3.",
+        "router",
+        "right",
+        "next",
+        "dedicated",
+        "5ghz",
+        "network",
+        "nothing",
+        "else",
+        "connected.",
+        "tried",
+        "lowering",
+        "bitrate",
+        "changing",
+        "codec",
+        "same",
+        "problem",
+        "every",
+        "session."
+      ]
+    }
+  ],
+  "ngramCases": [
+    {
+      "text": "",
+      "grams": []
+    },
+    {
+      "text": "ab",
+      "grams": [
+        [
+          "ab",
+          1
+        ]
+      ]
+    },
+    {
+      "text": "hello",
+      "grams": [
+        [
+          " he",
+          1
+        ],
+        [
+          "hel",
+          1
+        ],
+        [
+          "ell",
+          1
+        ],
+        [
+          "llo",
+          1
+        ],
+        [
+          "lo ",
+          1
+        ],
+        [
+          " hel",
+          1
+        ],
+        [
+          "hell",
+          1
+        ],
+        [
+          "ello",
+          1
+        ],
+        [
+          "llo ",
+          1
+        ],
+        [
+          " hell",
+          1
+        ],
+        [
+          "hello",
+          1
+        ],
+        [
+          "ello ",
+          1
+        ]
+      ]
+    },
+    {
+      "text": "quest3 wifi",
+      "grams": [
+        [
+          " qu",
+          1
+        ],
+        [
+          "que",
+          1
+        ],
+        [
+          "ues",
+          1
+        ],
+        [
+          "est",
+          1
+        ],
+        [
+          "st3",
+          1
+        ],
+        [
+          "t3 ",
+          1
+        ],
+        [
+          "3 w",
+          1
+        ],
+        [
+          " wi",
+          1
+        ],
+        [
+          "wif",
+          1
+        ],
+        [
+          "ifi",
+          1
+        ],
+        [
+          "fi ",
+          1
+        ],
+        [
+          " que",
+          1
+        ],
+        [
+          "ques",
+          1
+        ],
+        [
+          "uest",
+          1
+        ],
+        [
+          "est3",
+          1
+        ],
+        [
+          "st3 ",
+          1
+        ],
+        [
+          "t3 w",
+          1
+        ],
+        [
+          "3 wi",
+          1
+        ],
+        [
+          " wif",
+          1
+        ],
+        [
+          "wifi",
+          1
+        ],
+        [
+          "ifi ",
+          1
+        ],
+        [
+          " ques",
+          1
+        ],
+        [
+          "quest",
+          1
+        ],
+        [
+          "uest3",
+          1
+        ],
+        [
+          "est3 ",
+          1
+        ],
+        [
+          "st3 w",
+          1
+        ],
+        [
+          "t3 wi",
+          1
+        ],
+        [
+          "3 wif",
+          1
+        ],
+        [
+          " wifi",
+          1
+        ],
+        [
+          "wifi ",
+          1
+        ]
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "current": "plain",
+      "prior": "plain-variant",
+      "comparison": {
+        "sequenceRatio": 1,
+        "jaccard": 1,
+        "charCosine": 1,
+        "confidence": 1,
+        "lengthRatio": 1,
+        "newContentRatio": 0.125
+      }
+    },
+    {
+      "current": "plain-variant",
+      "prior": "plain",
+      "comparison": {
+        "sequenceRatio": 1,
+        "jaccard": 1,
+        "charCosine": 1,
+        "confidence": 1,
+        "lengthRatio": 1,
+        "newContentRatio": 0.125
+      }
+    },
+    {
+      "current": "long-help",
+      "prior": "long-help-variant",
+      "comparison": {
+        "sequenceRatio": 0.31094049904030713,
+        "jaccard": 0.8095238095238095,
+        "charCosine": 0.8758951799220364,
+        "confidence": 0.6582496304939631,
+        "lengthRatio": 1.0431372549019609,
+        "newContentRatio": 0.06896551724137931
+      }
+    },
+    {
+      "current": "long-help-variant",
+      "prior": "long-help",
+      "comparison": {
+        "sequenceRatio": 0.8291746641074856,
+        "jaccard": 0.8095238095238095,
+        "charCosine": 0.8758951799220364,
+        "confidence": 0.8396315882674756,
+        "lengthRatio": 1.0431372549019609,
+        "newContentRatio": 0.06896551724137931
+      }
+    },
+    {
+      "current": "plain",
+      "prior": "long-help",
+      "comparison": {
+        "sequenceRatio": 0.10843373493975904,
+        "jaccard": 0.043478260869565216,
+        "charCosine": 0.24598689830990467,
+        "confidence": 0.13709069989825187,
+        "lengthRatio": 3.311688311688312,
+        "newContentRatio": 0.75
+      }
+    },
+    {
+      "current": "bullet-list",
+      "prior": "quoted-reply",
+      "comparison": {
+        "sequenceRatio": 0.36363636363636365,
+        "jaccard": 0,
+        "charCosine": 0.03912303982179758,
+        "confidence": 0.1409657912103564,
+        "lengthRatio": 1.894736842105263,
+        "newContentRatio": 1
+      }
+    },
+    {
+      "current": "tiny",
+      "prior": "tiny",
+      "comparison": {
+        "sequenceRatio": 1,
+        "jaccard": 1,
+        "charCosine": 1,
+        "confidence": 1,
+        "lengthRatio": 1,
+        "newContentRatio": 0
+      }
+    },
+    {
+      "current": "whitespace-only",
+      "prior": "plain",
+      "comparison": {
+        "sequenceRatio": 0,
+        "jaccard": 0,
+        "charCosine": 0,
+        "confidence": 0,
+        "lengthRatio": 77,
+        "newContentRatio": 0
+      }
+    },
+    {
+      "current": "canonical-mix",
+      "prior": "canonical-storm",
+      "comparison": {
+        "sequenceRatio": 0.17777777777777778,
+        "jaccard": 0.1111111111111111,
+        "charCosine": 0.31331212290687016,
+        "confidence": 0.2052147985729601,
+        "lengthRatio": 1.6470588235294117,
+        "newContentRatio": 0.5
+      }
+    },
+    {
+      "current": "with-url",
+      "prior": "mentions-emoji",
+      "comparison": {
+        "sequenceRatio": 0.3508771929824561,
+        "jaccard": 0,
+        "charCosine": 0.013344012817090594,
+        "confidence": 0.12747742202984133,
+        "lengthRatio": 2.3529411764705883,
+        "newContentRatio": 1
+      }
+    },
+    {
+      "current": "code-fence",
+      "prior": "plain-variant",
+      "comparison": {
+        "sequenceRatio": 0.26666666666666666,
+        "jaccard": 0,
+        "charCosine": 0.04682929057908469,
+        "confidence": 0.10972358503601297,
+        "lengthRatio": 1.7906976744186047,
+        "newContentRatio": 1
+      }
+    },
+    {
+      "current": "nfkc",
+      "prior": "plain",
+      "comparison": {
+        "sequenceRatio": 0.4,
+        "jaccard": 0.043478260869565216,
+        "charCosine": 0.29077262801128967,
+        "confidence": 0.2548138980648209,
+        "lengthRatio": 2.75,
+        "newContentRatio": 0.8
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Runtime secrets & config (copy from the template.* files)
+.env
+.env.*
+config.json
+
+# Runtime-generated data & caches
+.commands-cache.json
+data/
+data/proposals.db*
+
+# Forensic capture is gone, but deployed checkouts still hold captured user
+# messages/attachments under message_history/ — those must never be committed.
+message_history/
+
+# Local docs scratch
+/documentation
+
+# Assistant session-memory notes — local only, never publish
+memory/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test / coverage output
+coverage/
+.nyc_output/
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

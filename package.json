@@ -1,0 +1,42 @@
+{
+  "name": "kryten",
+  "version": "1.0.0",
+  "description": "Kryten — the Virtual Desktop community's Discord support & moderation bot.",
+  "main": "dist/index.js",
+  "engines": {
+    "node": "22.23.1"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node dist/index.js",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.14.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.62.0",
+    "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "@thunder04/supermap": "^3.0.4",
+    "better-sqlite3": "^12.11.1",
+    "discord.js": "^14.26.4",
+    "dotenv": "^16.5.0",
+    "sharp": "^0.35.3"
+  },
+  "overrides": {
+    "undici": "6.27.0"
+  }
+}

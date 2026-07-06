@@ -1,0 +1,168 @@
+[
+  {
+    "name": "solid_gray.png",
+    "format": "PNG",
+    "mode": "RGB",
+    "size": [
+      64,
+      64
+    ],
+    "bytes": 153,
+    "sha256": "7d48f8dfc304a4e2c7e57290c9821c0ca69738968d5ed11651610f8f267bb2ef",
+    "phash_hex": "8000000000000000"
+  },
+  {
+    "name": "gradient.png",
+    "format": "PNG",
+    "mode": "RGB",
+    "size": [
+      96,
+      96
+    ],
+    "bytes": 545,
+    "sha256": "2c1936aa7ecd8e2047c76ad8fbcaac5689dda7825cd5bd7d2c035955780942cb",
+    "phash_hex": "a07cdb517a5d0f44"
+  },
+  {
+    "name": "gradient.jpg",
+    "format": "JPEG",
+    "mode": "RGB",
+    "size": [
+      96,
+      96
+    ],
+    "bytes": 1688,
+    "sha256": "d8a8dffa79f9a6a636023318f194c715a41a25b3212cb3b2b94d1aa3fb2dc0b1",
+    "phash_hex": "aa366465534dc91f"
+  },
+  {
+    "name": "checker.png",
+    "format": "PNG",
+    "mode": "RGB",
+    "size": [
+      80,
+      80
+    ],
+    "bytes": 204,
+    "sha256": "1fc9bf26ccd01d475bb11592afe359d03cadaaa589d1cb7f8cce2b6b32cf3ddd",
+    "phash_hex": "8000000000000000"
+  },
+  {
+    "name": "circles.png",
+    "format": "PNG",
+    "mode": "RGB",
+    "size": [
+      100,
+      100
+    ],
+    "bytes": 1470,
+    "sha256": "ee57dff6a1811d89ed366615d870ad503ea38c3ebacfe357bb1dff92115883b1",
+    "phash_hex": "807f5f287a716865"
+  },
+  {
+    "name": "alpha_red_on_transparent.png",
+    "format": "PNG",
+    "mode": "RGBA",
+    "size": [
+      64,
+      64
+    ],
+    "bytes": 227,
+    "sha256": "c9f8e71b03ba2d31d7a1dade84dd10d2665138b19e3ed789c8405154da274e7f",
+    "phash_hex": "a800820082002800"
+  },
+  {
+    "name": "la_bar.png",
+    "format": "PNG",
+    "mode": "LA",
+    "size": [
+      64,
+      64
+    ],
+    "bytes": 126,
+    "sha256": "b1e8d164ede415801c036e9342185f8eed97a43988faba8bdeb6273d86a287e7",
+    "phash_hex": "a0008a008a008a00"
+  },
+  {
+    "name": "palette_transp.png",
+    "format": "PNG",
+    "mode": "P",
+    "size": [
+      64,
+      64
+    ],
+    "bytes": 1102,
+    "sha256": "877ae864e550bf9f73dd8f20ca1ff0c3a5dd6c866a04eb2a56af4d424d6b25ce",
+    "phash_hex": "86316e5836adbb46"
+  },
+  {
+    "name": "gray_L.png",
+    "format": "PNG",
+    "mode": "L",
+    "size": [
+      72,
+      72
+    ],
+    "bytes": 89,
+    "sha256": "cd1efb97b7fe210149a30695b5efc7ff3a053c0169463ffe5f193c8254c835d0",
+    "phash_hex": "9937695a74592aaa"
+  },
+  {
+    "name": "wide.png",
+    "format": "PNG",
+    "mode": "RGB",
+    "size": [
+      160,
+      60
+    ],
+    "bytes": 2096,
+    "sha256": "2592e22c90f1285b57c7072ac9b45db6bb59af28d428711cc53ba2832b1224a1",
+    "phash_hex": "8000071f1f1f3f7f"
+  },
+  {
+    "name": "odd_dims.png",
+    "format": "PNG",
+    "mode": "RGB",
+    "size": [
+      37,
+      53
+    ],
+    "bytes": 112,
+    "sha256": "004dfbd7a8c870123d436bf411c7577d36d65a8623601382d988a050a20fd6e5",
+    "phash_hex": "802a552a55ab5faf"
+  },
+  {
+    "name": "gradient.webp",
+    "format": "WEBP",
+    "mode": "RGB",
+    "size": [
+      96,
+      96
+    ],
+    "bytes": 552,
+    "sha256": "2110f0c4197eb6d85dcd1c18678bdb8282beb0641fb1b0f71f2fbc0e316b75b4",
+    "phash_hex": "881e0b71364f7e78"
+  },
+  {
+    "name": "checker.gif",
+    "format": "GIF",
+    "mode": "P",
+    "size": [
+      80,
+      80
+    ],
+    "bytes": 559,
+    "sha256": "27eec6d1afb640b92565c7c20b7a7ddd3af42d5dd5d310c5ad608f59ccd53b40",
+    "phash_hex": "8000000000000000"
+  },
+  {
+    "name": "scam_kasowin.jpg",
+    "format": "JPEG",
+    "mode": "RGB",
+    "size": null,
+    "bytes": 99620,
+    "sha256": "1f3e15b5e595a4b0636bc937aeaa321debb642b6511ead254ce9e7a47a6a7131",
+    "phash_hex": "e5de4a00bcbd5a25",
+    "note": "real-world scam image; PIL warns Truncated File Read"
+  }
+]

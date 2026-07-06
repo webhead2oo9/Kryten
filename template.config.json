@@ -1,0 +1,86 @@
+{
+    "staff_roles": [
+        "YOUR_STAFF_ROLE_ID_HERE"
+    ],
+    "githubRepoOwner": "webhead2oo9",
+    "githubRepoName": "VirtualDesktopCommands",
+    "githubCommandsDir": "commands",
+    "githubBranch": "main",
+    "githubPollMinutes": 60,
+    "error_log_channel_id": "YOUR_ERROR_LOG_CHANNEL_ID_HERE",
+    "moderation": {
+        "mod_role_id": "YOUR_MOD_ROLE_ID_HERE",
+        "alert_channel_id": "YOUR_ALERT_CHANNEL_ID_HERE",
+        "channel_blacklist": [
+            "CHANNEL_ID_TO_IGNORE"
+        ],
+        "timeout": {
+            "channel_id": "YOUR_TIMEOUT_CHANNEL_ID_HERE",
+            "role_id": "YOUR_TIMEOUT_ROLE_ID_HERE",
+            "allowed_role_ids": [
+                "ROLE_ALLOWED_TO_TIMEOUT"
+            ],
+            "notification_channel_id": "YOUR_TIMEOUT_NOTIFICATION_CHANNEL_ID_HERE"
+        },
+        "crosspost": {
+            "enabled": true,
+            "dry_run": true,
+            "window_seconds": 900,
+            "sequence_ratio_threshold": 0.85,
+            "jaccard_threshold": 0.65,
+            "char_cosine_threshold": 0.88,
+            "min_normalized_length": 80,
+            "length_ratio_threshold": 1.18,
+            "new_content_ratio_threshold": 0.3,
+            "min_algorithms_to_match": 2,
+            "burst_channel_threshold": 3,
+            "burst_timeout_minutes": 30,
+            "burst_alert_channel_id": "YOUR_BURST_ALERT_CHANNEL_ID_HERE",
+            "ignored_channels": [],
+            "whitelisted_role_ids": []
+        },
+        "image_fingerprint": {
+            "enabled": false,
+            "dry_run": true,
+            "report_hits_in_dry_run": true,
+            "db_path": "./data/image_fingerprints.db",
+            "match_tolerance": 5,
+            "default_action": "kick",
+            "default_category": "scam",
+            "timeout_minutes": 30,
+            "delete_on_match": true,
+            "enforce_known_bad": true,
+            "recent_window_seconds": 900,
+            "review_channel_threshold": 2,
+            "review_crossposts": true,
+            "review_channel_id": "YOUR_IMAGE_REVIEW_CHANNEL_ID_HERE",
+            "alert_channel_id": "YOUR_IMAGE_ALERT_CHANNEL_ID_HERE",
+            "ignored_channels": [],
+            "whitelisted_role_ids": [],
+            "hub_enabled": false,
+            "hub_base_url": "http://127.0.0.1:58751",
+            "hub_sync_interval_seconds": 300,
+            "hub_request_timeout_seconds": 5,
+            "hub_api_key_env": "FINGERPRINT_HUB_API_KEY"
+        }
+    },
+    "auto_responder": {
+        "auto_response_channel_ids": [],
+        "random_greeting_channel_id": "YOUR_RANDOM_CHANNEL_ID_HERE",
+        "store_path": "./data/user_interactions.json",
+        "encryption_key_env": "USER_INTERACTIONS_ENCRYPTION_KEY"
+    },
+    "twitter": {
+        "enabled": false,
+        "enabled_channels": [],
+        "embed_service": "vxtwitter.com"
+    },
+    "proposals": {
+        "enabled": false,
+        "review_channel_id": "YOUR_PROPOSAL_REVIEW_CHANNEL_ID_HERE",
+        "max_pending": 5,
+        "ttl_hours": 72,
+        "rate_limit_per_minute": 100,
+        "db_path": "./data/proposals.db"
+    }
+}

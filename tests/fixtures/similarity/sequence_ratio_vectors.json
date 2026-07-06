@@ -1,0 +1,149 @@
+{
+  "generator_python": "3.14.6",
+  "cases": [
+    {
+      "name": "empty-both",
+      "a": "",
+      "b": "",
+      "ratio": 1.0
+    },
+    {
+      "name": "empty-a",
+      "a": "",
+      "b": "quest3 keeps disconnecting",
+      "ratio": 0.0
+    },
+    {
+      "name": "empty-b",
+      "a": "quest3 keeps disconnecting",
+      "b": "",
+      "ratio": 0.0
+    },
+    {
+      "name": "identical",
+      "a": "virtualdesktop stutters on 5ghz",
+      "b": "virtualdesktop stutters on 5ghz",
+      "ratio": 1.0
+    },
+    {
+      "name": "classic",
+      "a": "abcd",
+      "b": "bcde",
+      "ratio": 0.75
+    },
+    {
+      "name": "single-char",
+      "a": "a",
+      "b": "b",
+      "ratio": 0.0
+    },
+    {
+      "name": "near-dup",
+      "a": "my quest3 keeps disconnecting from virtualdesktop every few minutes any ideas",
+      "b": "quest3 keeps disconnecting from virtualdesktop every couple of minutes help",
+      "ratio": 0.8421052631578947
+    },
+    {
+      "name": "near-dup-rev",
+      "a": "quest3 keeps disconnecting from virtualdesktop every couple of minutes help",
+      "b": "my quest3 keeps disconnecting from virtualdesktop every few minutes any ideas",
+      "ratio": 0.8421052631578947
+    },
+    {
+      "name": "unrelated",
+      "a": "how do i enable passthrough in the quest3 home environment",
+      "b": "virtualdesktop shows a black screen when steamvr launches",
+      "ratio": 0.3130434782608696
+    },
+    {
+      "name": "long-near-dup",
+      "a": "having constant stuttering and packet loss when streaming pcvr over virtualdesktop on quest3 my router is right next to me on a dedicated 5ghz network nothing else connected tried lowering bitrate and changing codec still the same problem every session",
+      "b": "having constant stutter and packet loss when streaming pcvr through virtualdesktop on quest3 the router is right next to me on a dedicated 5ghz network nothing else is connected i tried lowering the bitrate and changing codec but still the same problem every session",
+      "ratio": 0.33976833976833976
+    },
+    {
+      "name": "long-near-dup-rev",
+      "a": "having constant stutter and packet loss when streaming pcvr through virtualdesktop on quest3 the router is right next to me on a dedicated 5ghz network nothing else is connected i tried lowering the bitrate and changing codec but still the same problem every session",
+      "b": "having constant stuttering and packet loss when streaming pcvr over virtualdesktop on quest3 my router is right next to me on a dedicated 5ghz network nothing else connected tried lowering bitrate and changing codec still the same problem every session",
+      "ratio": 0.833976833976834
+    },
+    {
+      "name": "autojunk-at-200",
+      "a": "wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd ",
+      "b": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+      "ratio": 0.005
+    },
+    {
+      "name": "autojunk-under-200",
+      "a": "wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd wxrd ",
+      "b": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+      "ratio": 0.7969924812030075
+    },
+    {
+      "name": "autojunk-all-popular",
+      "a": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "b": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ratio": 0.9795918367346939
+    },
+    {
+      "name": "random-30",
+      "a": "ececbcdababed b b a eacbaddead",
+      "b": "eccdcdababed b b a eacbaddead",
+      "ratio": 0.9491525423728814
+    },
+    {
+      "name": "random-30-rev",
+      "a": "eccdcdababed b b a eacbaddead",
+      "b": "ececbcdababed b b a eacbaddead",
+      "ratio": 0.9491525423728814
+    },
+    {
+      "name": "random-80",
+      "a": "eccaddeda ee aacae  bccbb baaa ccbe dccdada cbabcbaccdaa be  aca ca bdbdbbdbbcdb",
+      "b": "e ccaddedade aace  bccbbdbaaa bccbea dccdada cbabcbaccdaa be  aca ca bdbebbdbbcdb",
+      "ratio": 0.9316770186335404
+    },
+    {
+      "name": "random-80-rev",
+      "a": "e ccaddedade aace  bccbbdbaaa bccbea dccdada cbabcbaccdaa be  aca ca bdbebbdbbcdb",
+      "b": "eccaddeda ee aacae  bccbb baaa ccbe dccdada cbabcbaccdaa be  aca ca bdbdbbdbbcdb",
+      "ratio": 0.9316770186335404
+    },
+    {
+      "name": "random-150",
+      "a": "badccabe aa eaddb dddcbdcb eeeac e ed e a bcaaaeddbba edbedbdacb ba cc eacdcaacdcddea dcd ca  dca a abcd bee ebdeecee c  eaceee baae dcd e   ddb baaca",
+      "b": "badccabe a eaddb dddcbdcb eeeac e ed e a bcaaaeddbba edbedbdacb cba cc eaccaacdcdda dcdeca  dca bc abcd ebe ebdeecee c  eaceee baae dcd e   bddbb baaca",
+      "ratio": 0.9568106312292359
+    },
+    {
+      "name": "random-150-rev",
+      "a": "badccabe a eaddb dddcbdcb eeeac e ed e a bcaaaeddbba edbedbdacb cba cc eaccaacdcdda dcdeca  dca bc abcd ebe ebdeecee c  eaceee baae dcd e   bddbb baaca",
+      "b": "badccabe aa eaddb dddcbdcb eeeac e ed e a bcaaaeddbba edbedbdacb ba cc eacdcaacdcddea dcd ca  dca a abcd bee ebdeecee c  eaceee baae dcd e   ddb baaca",
+      "ratio": 0.9568106312292359
+    },
+    {
+      "name": "random-220",
+      "a": "aea bb  baac bc ad dcca abaca ecca   daa daae cdadaacadcbdecbcceeb cab baaad bdb abc cbdedebbabaea ceabe bcaec aebdc  becceddeccbcdbbccddacddeaaaeaaadedeecacaee badbcbeccbaddddacbbbeda a  b b ec  bacaaeeea eddceb badeceb",
+      "b": "aea bb baa bc ad dcca abacaecca  daa daae cdadaacadcbdecbece eb caeb baaad beb abc bedebbabaea bceabe bcaec caebdc  becceddecccbcdbbcdddacddaaaeaaadeaeeecacaee badbcbeccbaddddacbbbeda a  b b ec bacaaebeea eddceb badeceb",
+      "ratio": 0.03189066059225513
+    },
+    {
+      "name": "random-220-rev",
+      "a": "aea bb baa bc ad dcca abacaecca  daa daae cdadaacadcbdecbece eb caeb baaad beb abc bedebbabaea bceabe bcaec caebdc  becceddecccbcdbbcdddacddaaaeaaadeaeeecacaee badbcbeccbaddddacbbbeda a  b b ec bacaaebeea eddceb badeceb",
+      "b": "aea bb  baac bc ad dcca abaca ecca   daa daae cdadaacadcbdecbcceeb cab baaad bdb abc cbdedebbabaea ceabe bcaec aebdc  becceddeccbcdbbccddacddeaaaeaaadedeecacaee badbcbeccbaddddacbbbeda a  b b ec  bacaaeeea eddceb badeceb",
+      "ratio": 0.03189066059225513
+    },
+    {
+      "name": "random-350",
+      "a": "abcc aeeeeb eeeec d bccada b bbde bdaceea bc bcaabeaadeadecaaebaccaabeedaecbabaede   acdbae a cdea a dcda aeecdcaceb daeddadc ddcd bdcbedbddee bcbecedeebadaacec  bdbdebcccea b aded ddac dcbeb caaed bda ebb a dbcecdaccebcd cabaeddc a bdccb becca dbbbec adaeaa dee  cbbeaebcdd aeabccaaebeebebcebbc bcdb eb b cc ad  d ccddaaeaeadeabde aaadedccdedb cceeb",
+      "b": "a bcc aeeee eeeec dccada b cbbde bdaceea bc bcaabeadadeadecaaebaccaabeadaecbabaede   acdae a cdea a acdaaeecdcad ceb daeaddadc dcd bdcbedbddee bcbecedeebadaacec  bdbdebcccea b ad ddac dcbeb caaed bda ebb a bcecdaccebcd cabaeddc a dccb becca dddbbbec aebeaa dee  cabbeaebcdd aeaccaaebeebebcccbbc bcdb eb b ccc ad  dccddaae adead abde aadedccdedb cceeb",
+      "ratio": 0.002857142857142857
+    },
+    {
+      "name": "random-350-rev",
+      "a": "a bcc aeeee eeeec dccada b cbbde bdaceea bc bcaabeadadeadecaaebaccaabeadaecbabaede   acdae a cdea a acdaaeecdcad ceb daeaddadc dcd bdcbedbddee bcbecedeebadaacec  bdbdebcccea b ad ddac dcbeb caaed bda ebb a bcecdaccebcd cabaeddc a dccb becca dddbbbec aebeaa dee  cabbeaebcdd aeaccaaebeebebcccbbc bcdb eb b ccc ad  dccddaae adead abde aadedccdedb cceeb",
+      "b": "abcc aeeeeb eeeec d bccada b bbde bdaceea bc bcaabeaadeadecaaebaccaabeedaecbabaede   acdbae a cdea a dcda aeecdcaceb daeddadc ddcd bdcbedbddee bcbecedeebadaacec  bdbdebcccea b aded ddac dcbeb caaed bda ebb a dbcecdaccebcd cabaeddc a bdccb becca dbbbec adaeaa dee  cbbeaebcdd aeabccaaebeebebcebbc bcdb eb b cc ad  d ccddaaeaeadeabde aaadedccdedb cceeb",
+      "ratio": 0.002857142857142857
+    }
+  ]
+}
