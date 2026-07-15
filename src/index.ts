@@ -35,7 +35,14 @@ client.commandEditor.setPendingSyncDrainer(session => {
     );
 });
 
-client.login(process.env["DISCORD_TOKEN"]);
+// A rejected login (revoked/invalid token, gateway unreachable) would otherwise
+// surface only as an unhandled rejection and leave the process idling forever —
+// the 'ready' handler never fires, so the health server never starts and nothing
+// signals the failure. Fail fast so a supervisor can restart/alert.
+client.login(process.env["DISCORD_TOKEN"]).catch(error => {
+    console.error("FATAL: Discord login failed:", error instanceof Error ? error.message : error);
+    process.exit(1);
+});
 // Command loading happens in the 'ready' handler below.
 
 // Last-resort net: the interaction router and other async listeners are not

@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleInteraction } from "../src/handlers/interactionRouter";
 import { KrytenClient } from "../src/classes/client";
 import { Interaction } from "discord.js";
-import { BLOCK_SELECT_ID, EDITOR_BUTTON_IDS, EDITOR_MODAL_PREFIX, SECTION_SELECT_ID } from "../src/handlers/editorHandler";
+import {
+    BLOCK_SELECT_ID,
+    BUTTON_DELETE_PAGE_ID,
+    EDITOR_BUTTON_IDS,
+    EDITOR_MODAL_PREFIX,
+    SECTION_SELECT_ID,
+} from "../src/handlers/editorHandler";
 import { IMGFP_BUTTON_PREFIX } from "../src/features/imageFingerprint/imageFingerprintHandler";
 import { PROPOSAL_BUTTON_PREFIX } from "../src/proposals/reviewCard";
 
@@ -149,6 +155,11 @@ describe("handleInteraction route table", () => {
             await handleInteraction(button(id), makeClient());
             expectOnly(H.editorButton);
         }
+    });
+
+    it("routes a page-scoped editor button id (base:commandName:pageName) to the editor button handler", async () => {
+        await handleInteraction(button(`${BUTTON_DELETE_PAGE_ID}:faq:p2`), makeClient());
+        expectOnly(H.editorButton);
     });
 
     it("routes the section select to the section-selection handler", async () => {

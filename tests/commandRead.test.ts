@@ -92,6 +92,19 @@ describe("searchCommands", () => {
         expect(searchCommands(CORPUS, "zxqwvkptmn")).toEqual([]);
     });
 
+    it("does not award the phrase bonus for a single-token mid-word fragment", () => {
+        // "eads" is a substring of "headset"; the old raw includes() bonus scored
+        // it 95 and floated it to the top. A single token must not trigger the
+        // contiguous-phrase bonus (even at min_score 0 it should stay out).
+        const names = searchCommands(CORPUS, "eads", 10, 0).map(match => match.name);
+        expect(names).not.toContain("link-headset");
+    });
+
+    it("still awards the phrase bonus for a genuine multi-word contiguous phrase", () => {
+        const results = searchCommands(CORPUS, "link headset", 10, 40);
+        expect(results[0]!.name).toBe("link-headset");
+    });
+
     it("prefers specific content over a subset-only name match", () => {
         const results = searchCommands(CORPUS, "refund rules", 10, 0);
         const names = results.map(match => match.name);

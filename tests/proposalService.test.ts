@@ -343,6 +343,43 @@ describe("ProposalService.approveProposal", () => {
         expect(row?.resolvedBy).toBe("alice");
     });
 
+    it("stays busy across a commit and defers a runWhenIdle callback until approve finishes", async () => {
+        let releaseCommit: (() => void) | undefined;
+        const commitGate = new Promise<void>(resolve => {
+            releaseCommit = resolve;
+        });
+        const { service } = setup({
+            filesSeq: { commit: () => commitGate.then(() => ({ status: "ok", newSha: "sha-gated" })) },
+        });
+        const rec = store.createProposal({
+            operation: "create",
+            commandName: "faq",
+            proposedCommand: validBody("faq"),
+        });
+
+        const approvePromise = service.approveProposal(rec.proposalId, "alice");
+        // resolving is incremented synchronously before the first await.
+        expect(service.busy).toBe(true);
+
+        // A teardown request mid-approve must be deferred, not run now (which would
+        // close the store under the running approve).
+        let idleFired = false;
+        service.runWhenIdle(() => {
+            idleFired = true;
+        });
+        expect(idleFired).toBe(false);
+
+        releaseCommit?.();
+        const res = await approvePromise;
+
+        expect(res.status).toBe("approved");
+        expect(store.get(rec.proposalId)?.status).toBe("approved");
+        // The deferred callback runs exactly once the approve is done, and the
+        // service is idle again.
+        expect(idleFired).toBe(true);
+        expect(service.busy).toBe(false);
+    });
+
     it("approves a delete, applying the delete locally and dropping the command", async () => {
         const { service, client, commandSync, files } = setup({
             customCommands: [validBody("faq")],

@@ -685,7 +685,7 @@ function buildEditorComponents(
             editButtons.push({
                 type: 2,
                 style: selectedBlock ? ButtonStyle.Secondary : ButtonStyle.Primary,
-                custom_id: BUTTON_EDIT_PAGE_INFO_ID,
+                custom_id: `${BUTTON_EDIT_PAGE_INFO_ID}:${command.name}:${page.name}`,
                 label: "Edit Page Info",
             });
             editButtons.push({
@@ -712,13 +712,13 @@ function buildEditorComponents(
             pageButtons.push({
                 type: 2,
                 style: ButtonStyle.Secondary,
-                custom_id: BUTTON_DUPLICATE_PAGE_ID,
+                custom_id: `${BUTTON_DUPLICATE_PAGE_ID}:${command.name}:${page.name}`,
                 label: "Duplicate Page",
             });
             pageButtons.push({
                 type: 2,
                 style: ButtonStyle.Danger,
-                custom_id: BUTTON_DELETE_PAGE_ID,
+                custom_id: `${BUTTON_DELETE_PAGE_ID}:${command.name}:${page.name}`,
                 label: "Delete Page",
             });
         }
@@ -1355,7 +1355,17 @@ export async function handleEditorButton(interaction: ButtonInteraction, client:
     const command = client.commandEditor.getSelectedCommand(session);
     const page = client.commandEditor.getSelectedPage(session);
 
-    switch (interaction.customId) {
+    // Page-action buttons scope both command and page into the custom-id
+    // (base:commandName:pageName). A stale card from another command must not
+    // resolve a common page name against the session's newly selected command.
+    // Unscoped legacy ids and malformed scopes deliberately resolve to no target.
+    const [baseId = interaction.customId, ...buttonScope] = interaction.customId.split(":");
+    const targetPage =
+        command && buttonScope.length === 2 && buttonScope[0] === command.name
+            ? command.pages?.find(p => p.name === buttonScope[1])
+            : undefined;
+
+    switch (baseId) {
         case BUTTON_EDIT_GENERAL_ID: {
             if (!command) break;
             const modal = new ModalBuilder()
@@ -1476,17 +1486,17 @@ export async function handleEditorButton(interaction: ButtonInteraction, client:
             return showModal(interaction, modal);
         }
         case BUTTON_EDIT_PAGE_INFO_ID: {
-            if (!command || !page) break;
+            if (!command || !targetPage) break;
             const modal = new ModalBuilder()
-                .setCustomId(scopedModalId(MODAL_PAGE_INFO_ID, command.name, page.name))
-                .setTitle(clampModalTitle(`Edit Page — ${page.title ?? page.name}`));
+                .setCustomId(scopedModalId(MODAL_PAGE_INFO_ID, command.name, targetPage.name))
+                .setTitle(clampModalTitle(`Edit Page — ${targetPage.title ?? targetPage.name}`));
 
             const nameInput = new TextInputBuilder()
                 .setCustomId("name")
                 .setLabel("Page Name (lowercase, 1-32 chars)")
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
-                .setValue(page.name)
+                .setValue(targetPage.name)
                 .setMaxLength(32);
 
             // Clamp prefills to the inputs' max lengths: a longer value (e.g.
@@ -1497,7 +1507,7 @@ export async function handleEditorButton(interaction: ButtonInteraction, client:
                 .setLabel("Title")
                 .setStyle(TextInputStyle.Short)
                 .setRequired(false)
-                .setValue(clampText(page.title ?? "", 100, ""))
+                .setValue(clampText(targetPage.title ?? "", 100, ""))
                 .setMaxLength(100);
 
             const descriptionInput = new TextInputBuilder()
@@ -1505,7 +1515,7 @@ export async function handleEditorButton(interaction: ButtonInteraction, client:
                 .setLabel("Description")
                 .setStyle(TextInputStyle.Paragraph)
                 .setRequired(false)
-                .setValue(clampText(page.description ?? "", 4000, ""))
+                .setValue(clampText(targetPage.description ?? "", 4000, ""))
                 .setMaxLength(4000);
 
             modal.addComponents(
@@ -1612,13 +1622,13 @@ export async function handleEditorButton(interaction: ButtonInteraction, client:
             return interaction.showModal(modal);
         }
         case BUTTON_DUPLICATE_PAGE_ID: {
-            if (!command || !page) break;
+            if (!command || !targetPage) break;
             command.pages = command.pages ?? [];
             if (command.pages.length >= MAX_PAGES) {
                 session.statusMessage = `Commands support at most ${MAX_PAGES} pages.`;
                 return interaction.update(buildEditorResponse(session) as InteractionUpdateOptions);
             }
-            const clone = JSON.parse(JSON.stringify(page)) as CommandPage;
+            const clone = JSON.parse(JSON.stringify(targetPage)) as CommandPage;
             const candidate = nextDuplicatePageName(clone.name, command.pages);
             if (!candidate) {
                 session.statusMessage = "Could not generate a valid duplicate page name.";
@@ -1631,16 +1641,16 @@ export async function handleEditorButton(interaction: ButtonInteraction, client:
             command.pages.push(clone);
             client.commandEditor.setView(session, "page", clone.name);
             client.commandEditor.markDirty(session);
-            session.statusMessage = `Duplicated page '${page.name}'.`;
+            session.statusMessage = `Duplicated page '${targetPage.name}'.`;
             return interaction.update(buildEditorResponse(session) as InteractionUpdateOptions);
         }
         case BUTTON_DELETE_PAGE_ID: {
-            if (!command || !page) break;
+            if (!command || !targetPage) break;
             if (!command.pages) break;
-            command.pages = command.pages.filter(p => p.name !== page.name);
+            command.pages = command.pages.filter(p => p.name !== targetPage.name);
             client.commandEditor.setView(session, command.pages.length ? "page" : "general", command.pages[0]?.name);
             client.commandEditor.markDirty(session);
-            session.statusMessage = `Deleted page '${page.name}'.`;
+            session.statusMessage = `Deleted page '${targetPage.name}'.`;
             return interaction.update(buildEditorResponse(session) as InteractionUpdateOptions);
         }
         case BUTTON_SAVE_ID: {

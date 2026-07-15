@@ -197,12 +197,13 @@ function fieldScore(queryTokens: string[], field: IndexedSearchField): number {
         }
     }
     let score = (matched / queryTokens.length) * 100;
-    // Whole-query substring bonus — but only for a substantive phrase. A raw
-    // includes() on a 1-3 char query matches *inside* unrelated tokens (e.g. "in"
-    // inside "link"), scoring 95 and sailing past min_score. Length-gate it like
-    // the prefix/typo matchers above.
+    // Whole-query substring bonus — only for a genuine multi-word phrase. A raw
+    // includes() on a single token matches *inside* unrelated words (e.g. "eads"
+    // inside "headset"), scoring 95 and sailing past min_score; a length gate
+    // doesn't stop that. Single tokens are already scored by the exact/prefix
+    // matchers above, so the contiguous-phrase bonus only makes sense for 2+ tokens.
     const phrase = queryTokens.join(" ");
-    if (phrase.length >= PREFIX_MIN_CHARS && field.normalizedText.includes(phrase)) {
+    if (queryTokens.length >= 2 && field.normalizedText.includes(phrase)) {
         score = Math.max(score, PHRASE_BONUS_SCORE);
     }
     return Math.min(100, score);

@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { ButtonInteraction, ModalSubmitInteraction, StringSelectMenuInteraction } from "discord.js";
 import {
     BLOCK_SELECT_ID,
+    BUTTON_DELETE_PAGE_ID,
     BUTTON_EDIT_BLOCK_ID,
     MODAL_BLOCKS_ID,
     MODAL_BLOCK_ID,
@@ -238,6 +239,67 @@ function buttonInteraction(customId: string): ButtonInteraction {
         showModal: vi.fn(async () => undefined),
     } as unknown as ButtonInteraction;
 }
+
+describe("handleEditorButton — page-action buttons are page-scoped", () => {
+    it("deletes the page named in the button id, not the session's current cursor page", async () => {
+        const editor = new CustomCommandEditor();
+        const client = { commandEditor: editor } as unknown as KrytenClient;
+        const command: CustomCommand = {
+            format: 2,
+            name: "faq",
+            description: "d",
+            blocks: [{ type: "heading", text: "H" }],
+            pages: [
+                { name: "p1", blocks: [text("one")] },
+                { name: "p2", blocks: [text("two")] },
+            ],
+        };
+        const session = editor.getOrCreateSession("u1", [command]);
+        editor.selectCommand(session, "faq");
+        // Session cursor points at p1 (as if a newer editor message navigated
+        // there), but the click arrives from an older card that shows p2.
+        editor.setView(session, "page", "p1");
+
+        const interaction = buttonInteraction(`${BUTTON_DELETE_PAGE_ID}:faq:p2`);
+        await handleEditorButton(interaction, client);
+
+        const pages = editor.getSession("u1")!.commands.find(c => c.name === "faq")!.pages!;
+        expect(pages.map(p => p.name)).toEqual(["p1"]);
+        expect(interaction.update).toHaveBeenCalled();
+    });
+
+    it("does not resolve a stale card's common page name against another command", async () => {
+        const editor = new CustomCommandEditor();
+        const client = { commandEditor: editor } as unknown as KrytenClient;
+        const commands: CustomCommand[] = [
+            {
+                format: 2,
+                name: "faq",
+                description: "d",
+                blocks: [{ type: "heading", text: "FAQ" }],
+                pages: [{ name: "common", blocks: [text("faq")] }],
+            },
+            {
+                format: 2,
+                name: "setup",
+                description: "d",
+                blocks: [{ type: "heading", text: "Setup" }],
+                pages: [{ name: "common", blocks: [text("setup")] }],
+            },
+        ];
+        const session = editor.getOrCreateSession("u1", commands);
+        editor.selectCommand(session, "setup");
+        editor.setView(session, "page", "common");
+
+        const interaction = buttonInteraction(`${BUTTON_DELETE_PAGE_ID}:faq:common`);
+        await handleEditorButton(interaction, client);
+
+        const current = editor.getSession("u1")!;
+        expect(current.commands.find(c => c.name === "faq")!.pages).toHaveLength(1);
+        expect(current.commands.find(c => c.name === "setup")!.pages).toHaveLength(1);
+        expect(interaction.update).toHaveBeenCalled();
+    });
+});
 
 describe("handleEditorModal — raw block modal", () => {
     it("surfaces malformed block JSON before scanning thumbnail text", async () => {

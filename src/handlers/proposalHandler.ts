@@ -49,6 +49,13 @@ export function ensureProposalService(client: KrytenClient): void {
     const config = client.config.proposals;
     if (!config?.enabled) {
         if (client.proposalService) {
+            // Don't close the store under an in-flight resolution click — defer
+            // the stop until it finishes, then reconcile again and disable cleanly.
+            if (client.proposalService.busy) {
+                client.proposalService.runWhenIdle(() => ensureProposalService(client));
+                console.log("Proposals disabled; deferring service stop until the in-flight resolution finishes.");
+                return;
+            }
             client.proposalService.stop();
             delete client.proposalService;
             console.log("Command proposal service stopped (disabled in config).");
@@ -64,6 +71,15 @@ export function ensureProposalService(client: KrytenClient): void {
         const desiredTtlMs = (config.ttl_hours ?? DEFAULT_PROPOSAL_TTL_HOURS) * 3600 * 1000;
         const desiredDbPath = config.db_path ?? "./data/proposals.db";
         if (runningStore.ttlMs === desiredTtlMs && runningStore.dbPath === desiredDbPath) return;
+        // Don't rebuild (which closes the old store) under an in-flight resolution
+        // click; the deferred reconcile re-reads config and rebuilds when it finishes.
+        if (client.proposalService.busy) {
+            client.proposalService.runWhenIdle(() => ensureProposalService(client));
+            console.log(
+                "Proposal ttl_hours/db_path changed; deferring rebuild until the in-flight resolution finishes.",
+            );
+            return;
+        }
         console.log("Proposal ttl_hours/db_path changed in config; rebuilding the proposal service.");
         client.proposalService.stop();
         delete client.proposalService;
@@ -169,17 +185,27 @@ export async function handleProposalButton(interaction: ButtonInteraction, clien
             return;
         }
 
-        await interaction.deferUpdate().catch(() => undefined);
+        // Enter the service's teardown gate before the first network await. A
+        // concurrent /reload_config can then defer disabling/rebuilding instead
+        // of closing this captured service's SQLite handle mid-click.
+        const releaseResolutionGate = service.acquireResolutionGate();
+        let reviewerName: string;
+        let result: ResolutionResult;
+        try {
+            await interaction.deferUpdate().catch(() => undefined);
 
-        const reviewerName =
-            interaction.inCachedGuild() && interaction.member.displayName
-                ? interaction.member.displayName
-                : (interaction.user.globalName ?? interaction.user.username);
+            reviewerName =
+                interaction.inCachedGuild() && interaction.member.displayName
+                    ? interaction.member.displayName
+                    : (interaction.user.globalName ?? interaction.user.username);
 
-        const result: ResolutionResult =
-            parsed.action === "approve"
-                ? await service.approveProposal(parsed.proposalId, reviewerName)
-                : service.rejectProposal(parsed.proposalId, reviewerName);
+            result =
+                parsed.action === "approve"
+                    ? await service.approveProposal(parsed.proposalId, reviewerName)
+                    : service.rejectProposal(parsed.proposalId, reviewerName);
+        } finally {
+            releaseResolutionGate();
+        }
 
         // A lost double-click that lands while the WINNER is still committing:
         // the proposal's recorded status ("applying") isn't terminal yet, so

@@ -68,7 +68,15 @@ const interactionRoutes: InteractionRoute[] = [
     },
     {
         name: "editor-button",
-        matches: interaction => interaction.isButton() && EDITOR_BUTTON_IDS.includes(interaction.customId),
+        // Editor buttons match by exact id, plus the scoped "base:..." form the
+        // page-action buttons use (base:commandName:pageName). This is safe because
+        // every editor id is cmd-editor-* and the proposal/imgfp prefix routes above
+        // already claimed their colon-bearing ids.
+        matches: interaction => {
+            if (!interaction.isButton()) return false;
+            const base = interaction.customId.split(":")[0] ?? interaction.customId;
+            return EDITOR_BUTTON_IDS.includes(interaction.customId) || EDITOR_BUTTON_IDS.includes(base);
+        },
         handle: async (interaction, client) => {
             if (interaction.isButton()) await handleEditorButton(interaction, client);
         },

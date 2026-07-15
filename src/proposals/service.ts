@@ -73,12 +73,50 @@ export class ProposalService {
         this.sweepTimer.unref();
     }
 
+    private resolving = 0;
+    private onIdle?: () => void;
+
     stop(): void {
         if (this.sweepTimer) {
             clearInterval(this.sweepTimer);
             this.sweepTimer = undefined;
         }
         this.store.close();
+    }
+
+    /** True while a resolution click is in flight and still needs the live store. */
+    get busy(): boolean {
+        return this.resolving > 0;
+    }
+
+    /**
+     * Enter the teardown gate synchronously, returning an idempotent release.
+     * Button handlers acquire this before their first Discord await so a config
+     * reload cannot close the captured service's store during acknowledgement.
+     */
+    acquireResolutionGate(): () => void {
+        this.resolving++;
+        let released = false;
+        return () => {
+            if (released) return;
+            released = true;
+            if (--this.resolving === 0 && this.onIdle) {
+                const fn = this.onIdle;
+                this.onIdle = undefined;
+                fn();
+            }
+        };
+    }
+
+    /**
+     * Run `fn` now when idle, else defer it until the last in-flight resolution
+     * finishes. Lets `/reload_config` postpone a store teardown/rebuild that would
+     * otherwise close the SQLite handle under a running approve — the deferred
+     * reconcile re-reads fresh config, so the change still lands, just a beat later.
+     */
+    runWhenIdle(fn: () => void): void {
+        if (this.resolving === 0) fn();
+        else this.onIdle = fn;
     }
 
     /** Read fresh so /reload_config takes effect like every other setting. */
@@ -336,6 +374,18 @@ export class ProposalService {
     }
 
     async approveProposal(proposalId: string, reviewerName: string): Promise<ResolutionResult> {
+        // Hold the "resolving" gate across the whole approve so a concurrent
+        // /reload_config defers any store teardown until the terminal markApproved
+        // has run on the live store (see runWhenIdle).
+        const release = this.acquireResolutionGate();
+        try {
+            return await this.approveProposalInner(proposalId, reviewerName);
+        } finally {
+            release();
+        }
+    }
+
+    private async approveProposalInner(proposalId: string, reviewerName: string): Promise<ResolutionResult> {
         const record = this.store.claimForResolution(proposalId);
         if (!record) {
             return this.alreadyResolvedResult(proposalId);
