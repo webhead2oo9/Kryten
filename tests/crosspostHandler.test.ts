@@ -321,6 +321,22 @@ describe("CrosspostHandler — staff/whitelist exemption", () => {
         expect(recentOf(handler)).toBeUndefined();
         expect(handler.getMetrics().messagesProcessed).toBe(0);
     });
+
+    it("fails closed: an unresolved member with an exemption configured is not tracked or actioned", async () => {
+        // member undefined AND the fetch can't resolve them — we can't confirm the
+        // author isn't exempt, so detection must be skipped rather than fall through.
+        const fetch = vi.fn().mockResolvedValue(null);
+        const client = makeClient({ enabled: true, whitelisted_role_ids: ["vip-role"] });
+        const handler = new CrosspostHandler(client);
+
+        await handler.check(
+            makeMessage({ channelId: "chan-a", content: IDENTICAL, member: undefined, guild: makeGuild(fetch) }),
+        );
+
+        expect(fetch).toHaveBeenCalledWith(AUTHOR_ID);
+        expect(recentOf(handler)).toBeUndefined();
+        expect(handler.getMetrics().messagesProcessed).toBe(0);
+    });
 });
 
 describe("CrosspostHandler — directional update suppression", () => {

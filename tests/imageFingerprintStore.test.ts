@@ -267,4 +267,75 @@ describe("ImageFingerprintStore — hub sync", () => {
         await s.syncOnce();
         expect(s.match(phashFromHex("bbbbbbbbbbbbbbbb"), 0)).toBeNull();
     });
+
+    it("deletes the orphaned hub row when the local row is removed mid-contribute", async () => {
+        process.env["FINGERPRINT_HUB_API_KEY"] = "fph_test";
+        const calls: { method: string; url: string }[] = [];
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async (url: string, init: any) => {
+                calls.push({ method: init?.method ?? "GET", url: String(url) });
+                if (String(url).endsWith("/v1/fingerprints") && init?.method === "POST") {
+                    return { status: 201, json: async () => ({ id: 777 }) } as unknown as Response;
+                }
+                return { status: 204, json: async () => null } as unknown as Response;
+            }),
+        );
+        const s = makeStore({ hub_enabled: true });
+        const rowId = s.add({ phash: phashFromHex("cccccccccccccccc"), action: "kick", category: "scam", addedBy: "a" });
+        // Remove locally before the fire-and-forget contribute stamps its hub id
+        // (hub_fingerprint_id is still NULL, so remove() can't delete it hub-side).
+        await s.remove(rowId);
+        // When contribute's UPDATE finds the row gone, it must delete the hub orphan.
+        await vi.waitFor(() => expect(calls.some(c => c.method === "DELETE")).toBe(true));
+        expect(calls.some(c => c.method === "DELETE" && c.url.endsWith("/v1/fingerprints/777"))).toBe(true);
+        expect(s.size).toBe(0);
+    });
+
+    it("does not write to the DB (and does not throw) when closed mid-sync", async () => {
+        process.env["FINGERPRINT_HUB_API_KEY"] = "fph_test";
+        let releaseSync: (() => void) | undefined;
+        vi.stubGlobal(
+            "fetch",
+            vi.fn((url: string) => {
+                if (String(url).includes("/v1/fingerprints/sync")) {
+                    return new Promise<Response>(resolve => {
+                        releaseSync = () =>
+                            resolve({
+                                status: 200,
+                                json: async () => ({
+                                    fingerprints: [
+                                        {
+                                            id: 5,
+                                            sync_seq: 5,
+                                            phash_hex: "dddddddddddddddd",
+                                            algorithm: "phash",
+                                            algorithm_version: "imagehash.phash",
+                                            normalization_version: "alpha_white_v1",
+                                            category: "scam",
+                                            action: "kick",
+                                            consumer_id: 2,
+                                            status: "active",
+                                        },
+                                    ],
+                                    next_since: 5,
+                                    has_more: false,
+                                }),
+                            } as unknown as Response);
+                    });
+                }
+                return Promise.resolve({ status: 200, json: async () => ({}) } as unknown as Response);
+            }),
+        );
+        const errors: string[] = [];
+        const s = new ImageFingerprintStore(
+            { db_path: join(dir, "close_midsync.db"), hub_enabled: true },
+            { onError: (context, error) => errors.push(`${context}: ${String(error)}`) },
+        );
+        const pending = s.syncOnce(); // parks awaiting the hub page
+        s.close(); // close the DB while the sync is in flight
+        releaseSync?.(); // page arrives — the guard must bail before any DB write
+        await expect(pending).resolves.toBeUndefined();
+        expect(errors).toEqual([]);
+    });
 });

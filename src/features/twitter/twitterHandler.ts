@@ -127,14 +127,29 @@ export function sanitizeWebhookUsername(name: string): string {
     return cleaned.length ? cleaned : WEBHOOK_NAME;
 }
 
+// Two links arriving together would each fetch-then-create and make duplicate
+// "Link Fixer" webhooks. Dedupe concurrent lookups per channel: the second caller
+// awaits the first's in-flight promise instead of racing a second createWebhook.
+const webhookInFlight = new Map<string, Promise<Webhook | null>>();
+
 async function getOrCreateWebhook(channel: TextChannel): Promise<Webhook | null> {
+    const existing = webhookInFlight.get(channel.id);
+    if (existing) return existing;
+    const promise = (async (): Promise<Webhook | null> => {
+        try {
+            const webhooks = await channel.fetchWebhooks();
+            const found = webhooks.find(w => w.name === WEBHOOK_NAME);
+            if (found) return found;
+            return await channel.createWebhook({ name: WEBHOOK_NAME, reason: "Twitter/X link fixer" });
+        } catch {
+            return null;
+        }
+    })();
+    webhookInFlight.set(channel.id, promise);
     try {
-        const webhooks = await channel.fetchWebhooks();
-        const existing = webhooks.find(w => w.name === WEBHOOK_NAME);
-        if (existing) return existing;
-        return await channel.createWebhook({ name: WEBHOOK_NAME, reason: "Twitter/X link fixer" });
-    } catch {
-        return null;
+        return await promise;
+    } finally {
+        webhookInFlight.delete(channel.id);
     }
 }
 

@@ -46,6 +46,14 @@ export const IMGFP_BUTTON_PREFIX = "imgfp:";
 const REVIEW_TTL_MS = 24 * 60 * 60 * 1000;
 // How often to age out expired review cards independently of new-card activity.
 const REVIEW_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+// Hard cap on live review cards. Each is metadata-only once posted (the image
+// buffer is released), but bound the count anyway so a flood of distinct
+// crosspost clusters can't grow the map (or the O(n) pending-phash scan) without
+// limit; the oldest card is evicted when a new one would exceed this.
+const MAX_PENDING_REVIEWS = 500;
+// Shared empty buffer swapped in for a posted review's image bytes — the
+// approve/deny paths never read source.raw again.
+const RELEASED_IMAGE_BYTES = Buffer.alloc(0);
 
 interface Candidate {
     phash: bigint;
@@ -197,7 +205,11 @@ export class ImageFingerprintHandler {
         if (exemptRoleIds.length) {
             const member = message.member ?? (await message.guild?.members.fetch(message.author.id).catch(() => null));
             const roles = member?.roles.cache;
-            if (roles && roles.some(role => exemptRoleIds.includes(role.id))) return false;
+            // Fail closed: an unresolved member can't be confirmed non-exempt, so
+            // skip scanning rather than risk kicking/timing-out a whitelisted or
+            // staff user whose member object happened to miss the cache and fetch.
+            if (!roles) return false;
+            if (roles.some(role => exemptRoleIds.includes(role.id))) return false;
         }
 
         // Keep the store's sync-upsert action hint aligned with live config.
@@ -430,6 +442,11 @@ export class ImageFingerprintHandler {
                 flags: MessageFlags.IsComponentsV2,
                 allowedMentions: { parse: [] },
             });
+            // The card now carries the image and the approve/deny paths only read
+            // phash/url/jumpUrl, so drop the (up to 8 MiB) raw buffer before the
+            // review joins the long-lived pending map.
+            review.source = { ...review.source, raw: RELEASED_IMAGE_BYTES };
+            this.evictOldestReviewIfFull();
             this.pendingReviews.set(review.token, review);
             this.metrics.reviewsRaised++;
             this.sweepReviews();
@@ -537,6 +554,23 @@ export class ImageFingerprintHandler {
             if (kept.length) this.recentImages.set(userId, kept);
             else this.recentImages.delete(userId);
         }
+    }
+
+    /** Drop the oldest pending review when the map is at capacity, before inserting. */
+    private evictOldestReviewIfFull(): void {
+        if (this.pendingReviews.size < MAX_PENDING_REVIEWS) return;
+        let oldestToken: string | undefined;
+        let oldestAt = Infinity;
+        for (const [token, review] of this.pendingReviews) {
+            if (review.createdAt < oldestAt) {
+                oldestAt = review.createdAt;
+                oldestToken = token;
+            }
+        }
+        if (oldestToken === undefined) return;
+        const evicted = this.pendingReviews.get(oldestToken)!;
+        this.pendingReviews.delete(oldestToken);
+        this.pendingPhashes.delete(evicted.phashHex);
     }
 
     private sweepReviews(): void {

@@ -212,7 +212,11 @@ export class CrosspostHandler {
                 const fetched = await message.guild?.members.fetch(message.author.id).catch(() => null);
                 roles = fetched?.roles.cache;
             }
-            if (roles && roles.some(role => exemptRoleIds.includes(role.id))) return;
+            // Fail closed: an unresolved member can't be confirmed non-exempt, so
+            // skip detection rather than risk warning/timing-out a whitelisted or
+            // staff user whose member object happened to miss the cache and fetch.
+            if (!roles) return;
+            if (roles.some(role => exemptRoleIds.includes(role.id))) return;
         }
 
         const attachmentFingerprint = this.attachmentFingerprint(message);

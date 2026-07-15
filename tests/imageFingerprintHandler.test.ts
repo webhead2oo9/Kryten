@@ -319,6 +319,24 @@ describe("ImageFingerprintHandler.process gates", () => {
         expect(del).not.toHaveBeenCalled();
         expect(handler.getMetrics().imagesScanned).toBe(0);
     });
+
+    it("fails closed: an unresolved member with an exemption configured is not scanned or enforced", async () => {
+        const client = makeClient({ enabled: true, dry_run: false, whitelisted_role_ids: ["vip"] });
+        const handler = makeHandler(client);
+        handler.store.add({ phash: phashFromHex(KNOWN_BAD), action: "kick", category: "scam", addedBy: "seed" });
+        const del = vi.fn(async () => undefined);
+        // member missing AND the fetch fails to resolve — we can't confirm the
+        // author isn't exempt, so scanning/enforcement must be skipped.
+        const fetch = vi.fn(async () => null);
+        const guild = makeGuild(fetch);
+        const result = await handler.process(
+            makeMessage({ attachments: [{ phash: KNOWN_BAD }], member: null, guild, delete: del }),
+        );
+        expect(result).toBe(false);
+        expect(fetch).toHaveBeenCalledWith("user-1");
+        expect(del).not.toHaveBeenCalled();
+        expect(handler.getMetrics().imagesScanned).toBe(0);
+    });
 });
 
 // ---- known-bad match ------------------------------------------------------
@@ -477,6 +495,53 @@ describe("ImageFingerprintHandler crosspost review", () => {
         );
         expect(send).toHaveBeenCalledTimes(1);
         expect(handler.getMetrics().reviewsRaised).toBe(1);
+    });
+
+    it("releases the retained image buffer once the review card is posted", async () => {
+        const send = vi.fn(async () => ({ id: "m" }));
+        const client = makeClient({
+            enabled: true,
+            dry_run: true,
+            review_channel_id: "review-chan",
+            review_channel_threshold: 2,
+            crosspost_tolerance: 5,
+        });
+        registerChannel(client, "review-chan", makeTextChannel(send));
+        const handler = makeHandler(client);
+        const author = { id: "spammer-3", tag: "spammer#0003", bot: false };
+        const guild = makeGuild();
+        const P = "0000000000000000";
+        await handler.process(
+            makeMessage({ attachments: [{ phash: P }], author, member: makeMember([]), guild, channelId: "chan-A" }),
+        );
+        await handler.process(
+            makeMessage({ attachments: [{ phash: P }], author, member: makeMember([]), guild, channelId: "chan-B" }),
+        );
+        // Card sent with the image attached, but the pending review no longer pins
+        // the (potentially multi-MB) buffer — approve/deny never read it again.
+        expect(send).toHaveBeenCalledTimes(1);
+        const reviews = [...(handler as any).pendingReviews.values()];
+        expect(reviews).toHaveLength(1);
+        expect((reviews[0] as any).source.raw.length).toBe(0);
+    });
+
+    it("evicts the oldest pending review when the map is at capacity", async () => {
+        const client = makeClient({ enabled: true, dry_run: true, review_channel_id: "review-chan" });
+        const handler = makeHandler(client);
+        const pending: Map<string, any> = (handler as any).pendingReviews;
+        const phashes: Set<string> = (handler as any).pendingPhashes;
+        // Seed well above any reasonable cap so the next insert must evict exactly
+        // the oldest (lowest createdAt) entry and drop its pending-phash marker.
+        for (let i = 0; i < 600; i++) {
+            const hex = i.toString(16).padStart(16, "0");
+            pending.set(`token-${i}`, { token: `token-${i}`, phashHex: hex, createdAt: i });
+            phashes.add(hex);
+        }
+        const before = pending.size;
+        (handler as any).evictOldestReviewIfFull();
+        expect(pending.size).toBe(before - 1);
+        expect(pending.has("token-0")).toBe(false);
+        expect(phashes.has("0".padStart(16, "0"))).toBe(false);
     });
 
     it("removes the pending phash when posting the card fails, so a later occurrence can raise a new card", async () => {

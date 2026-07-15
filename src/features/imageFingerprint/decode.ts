@@ -64,13 +64,44 @@ export interface DecodedImage {
     hasAlpha: boolean;
 }
 
-export async function decodeImage(bytes: Buffer | Uint8Array): Promise<DecodedImage> {
+// A fingerprint materializes the full RGBA plane (width*height*4 ≈ 200 MB at
+// the 50 MP ceiling), then hashing retains it while creating a luma plane. A tiny
+// highly-compressible upload can therefore amplify to a huge transient allocation
+// that the byte/pixel guards can't see. Bound the whole decode-and-hash lifetime
+// so a burst of images can't stack these allocations and OOM the process.
+// Direct-handoff semaphore: a released slot is passed straight to the next waiter
+// (count unchanged) rather than decremented, so the ceiling is never exceeded.
+const MAX_CONCURRENT_DECODES = 2;
+let activeDecodes = 0;
+const decodeWaiters: Array<() => void> = [];
+
+function acquireDecodeSlot(): Promise<void> {
+    if (activeDecodes < MAX_CONCURRENT_DECODES) {
+        activeDecodes++;
+        return Promise.resolve();
+    }
+    // Slot is inherited on wake — activeDecodes already accounts for this decode.
+    return new Promise<void>(resolve => decodeWaiters.push(resolve));
+}
+
+function releaseDecodeSlot(): void {
+    const next = decodeWaiters.shift();
+    if (next) next();
+    else activeDecodes--;
+}
+
+function checkedRasterBuffer(bytes: Buffer | Uint8Array): Buffer {
     const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
-    // Reject non-raster containers on magic bytes before libvips sees them, so an
-    // SVG/PDF/XML payload can't reach librsvg even via metadata()'s dimension read.
+    // Reject non-raster containers on magic bytes before libvips sees them (and
+    // before taking a decode slot), so an SVG/PDF/XML payload can't reach librsvg
+    // even via metadata()'s dimension read.
     if (!looksLikeRasterContainer(buf)) {
         throw new Error("unsupported image format: not a recognized raster container");
     }
+    return buf;
+}
+
+async function decodeRasterImage(buf: Buffer): Promise<DecodedImage> {
     const base = sharp(buf, { failOn: "none", limitInputPixels: MAX_FINGERPRINT_IMAGE_PIXELS });
     const meta = await base.metadata();
     // Defense in depth: also reject on what libvips actually decoded.
@@ -95,8 +126,24 @@ export async function decodeImage(bytes: Buffer | Uint8Array): Promise<DecodedIm
     };
 }
 
+export async function decodeImage(bytes: Buffer | Uint8Array): Promise<DecodedImage> {
+    const buf = checkedRasterBuffer(bytes);
+    await acquireDecodeSlot();
+    try {
+        return await decodeRasterImage(buf);
+    } finally {
+        releaseDecodeSlot();
+    }
+}
+
 /** Decode + hash: compressed image bytes → 16-char pHash hex. */
 export async function computePhashHex(bytes: Buffer | Uint8Array): Promise<string> {
-    const { pixels, width, height, hasAlpha } = await decodeImage(bytes);
-    return phashHexFromRgba(pixels, width, height, hasAlpha);
+    const buf = checkedRasterBuffer(bytes);
+    await acquireDecodeSlot();
+    try {
+        const { pixels, width, height, hasAlpha } = await decodeRasterImage(buf);
+        return phashHexFromRgba(pixels, width, height, hasAlpha);
+    } finally {
+        releaseDecodeSlot();
+    }
 }

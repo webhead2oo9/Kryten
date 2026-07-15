@@ -214,6 +214,7 @@ export class ImageFingerprintStore {
 
     /** Rebuild the in-memory index from SQLite. */
     reload(): void {
+        if (!this.db.open) return;
         const rows = this.db.prepare("SELECT * FROM known_bad_image_fingerprints ORDER BY id").all() as Row[];
         const entries: Entry[] = [];
         for (const row of rows) {
@@ -446,12 +447,21 @@ export class ImageFingerprintStore {
             this.onError("hub contribute failed", result.detail);
             return;
         }
+        // The store may have been closed while we were contributing (shutdown).
+        if (!this.db.open) return;
         try {
-            this.db
+            const info = this.db
                 .prepare(
                     "UPDATE known_bad_image_fingerprints SET hub_fingerprint_id = ?, origin = 'local', hub_synced_at_ms = ? WHERE id = ?",
                 )
                 .run(result.hubId, Date.now(), rowId);
+            if (info.changes === 0) {
+                // The local row was removed (staff remove()) during the contribute
+                // round-trip, so remove() saw a null hub link and skipped the hub
+                // delete. Delete the now-orphaned hub row so it isn't left dangling.
+                void this.hub.remove(result.hubId);
+                return;
+            }
             const entry = this.entries.find(e => e.rowId === rowId);
             if (entry) entry.hubFingerprintId = result.hubId;
         } catch (error) {
@@ -497,6 +507,9 @@ export class ImageFingerprintStore {
                     algorithm_version: this.compat[1],
                     normalization_version: this.compat[2],
                 });
+                // close() can fire while we're awaiting the hub (shutdown); stop
+                // before touching the DB so we never write to a closed handle.
+                if (!this.db.open) return;
                 if (!page) break;
                 for (const row of page.fingerprints) {
                     try {
@@ -621,6 +634,7 @@ export class ImageFingerprintStore {
     }
 
     private writeWatermark(seq: number): void {
+        if (!this.db.open) return;
         this.db
             .prepare(
                 "INSERT INTO fingerprint_hub_sync_state (id, last_sync_seq) VALUES (1, ?) " +
