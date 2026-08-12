@@ -116,8 +116,8 @@ describe("sanitizeSensitiveText", () => {
     });
 
     it("keeps beta versions and ordinary USB troubleshooting numbers", () => {
-        expect(sanitizeSensitiveText("Quest 1.34.19 drops every 12 minutes on USB 3.0")).toBe(
-            "Quest 1.34.19 drops every 12 minutes on USB 3.0",
+        expect(sanitizeSensitiveText("Quest 1.34.20 drops every 12 minutes on USB 3.0")).toBe(
+            "Quest 1.34.20 drops every 12 minutes on USB 3.0",
         );
     });
 

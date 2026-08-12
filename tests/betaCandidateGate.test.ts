@@ -3,7 +3,10 @@ import { betaCandidateDecision } from "../src/features/betaClassifier/candidateG
 
 describe("betaCandidateDecision", () => {
     const routes = [
-        "Why does 1.34.19 only show Wi-Fi and no USB tag?",
+        "Why does 1.34.20 only show Wi-Fi and no USB tag?",
+        "How do I do the beta USB setup?",
+        "Does the USB cable work?",
+        "Where is the beta?",
         "Where do I download the Beta Streamer?",
         "USB NCM is missing from the adapter list, can anyone help?",
         "The VD stream freezes every 12 minutes on my Quest 3.",
@@ -17,6 +20,7 @@ describe("betaCandidateDecision", () => {
     ];
 
     const ignores = [
+        "Why does 1.34.19 only show Wi-Fi and no USB tag?",
         "I use a cable; how do I start a flight simulator in VR?",
         "The beta USB connection and my new cable work perfectly.",
         "My USB flight stick is not detected by my game, can someone help?",
