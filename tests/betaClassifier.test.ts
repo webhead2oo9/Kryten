@@ -4,6 +4,7 @@ import type { KrytenClient } from "../src/classes/client";
 import { BetaClassifier } from "../src/features/betaClassifier/betaClassifier";
 import { LlmClassifier, type ClassificationResult, type ClassificationTask } from "../src/llm/classifier";
 import type { ClassificationLogger } from "../src/llm/classificationLogger";
+import type { ClassifierRun, UserInteractionStore } from "../src/features/userInteractions/store";
 
 vi.mock("../src/features/betaClassifier/promptFile", () => ({
     loadBetaClassifierPrompt: vi.fn(async () => ({
@@ -20,7 +21,10 @@ function client(overrides: Record<string, unknown> = {}): KrytenClient {
                 enabled: true,
                 response_enabled: false,
                 guild_id: "guild",
-                watched_channel_ids: ["support"],
+                campaign_id: "synthetic-beta",
+                campaign_started_at: new Date(Date.now() - 1_000).toISOString(),
+                included_channel_ids: ["support"],
+                excluded_role_ids: ["excluded-role"],
                 target_channel_id: "beta",
                 announcement_url: "https://discord.com/channels/guild/channel/message",
                 prompt_file: "/private/beta-prompt.json",
@@ -69,6 +73,34 @@ function auditLogger(log = vi.fn(async () => undefined)): ClassificationLogger {
     return { log, getMetrics: () => ({ sent: 0, failures: 0 }) } as unknown as ClassificationLogger;
 }
 
+function interactionStore(overrides: Record<string, unknown> = {}): UserInteractionStore {
+    let sequence = 0;
+    const active = new Set<ClassifierRun>();
+    return {
+        beginClassifierRun: vi.fn(async (userId: string, campaign: { classifierId: string; campaignId: string }) => {
+            const run = {
+                key: `${campaign.classifierId}:${userId}:${sequence++}`,
+                classifierId: campaign.classifierId,
+                userId,
+                campaignId: campaign.campaignId,
+                generation: 0,
+            };
+            active.add(run);
+            return { status: "acquired", run };
+        }),
+        isClassifierRunCurrent: vi.fn((run: ClassifierRun) => active.has(run)),
+        isUserGenerationCurrent: vi.fn(() => true),
+        completeClassifierRun: vi.fn(async (run: ClassifierRun) => {
+            active.delete(run);
+            return "stored";
+        }),
+        releaseClassifierRun: vi.fn(async (run: ClassifierRun) => {
+            active.delete(run);
+        }),
+        ...overrides,
+    } as unknown as UserInteractionStore;
+}
+
 function result(
     label: "ROUTE" | "IGNORE",
     status: ClassificationResult<"ROUTE" | "IGNORE">["status"] = "ok",
@@ -100,7 +132,7 @@ describe("BetaClassifier", () => {
         const classifier = { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier;
         const testClient = client();
         const classificationLog = vi.fn(async () => undefined);
-        const feature = new BetaClassifier(testClient, classifier, auditLogger(classificationLog));
+        const feature = new BetaClassifier(testClient, classifier, auditLogger(classificationLog), interactionStore());
 
         await feature.process(message);
         await feature.drain();
@@ -128,6 +160,39 @@ describe("BetaClassifier", () => {
         });
     });
 
+    it("keeps excluded-role messages as pseudonymous surrounding context", async () => {
+        const historical = discordMessage({
+            id: "excluded-context",
+            content: "The beta Streamer must also be installed.",
+            createdTimestamp: 1,
+            author: { id: "excluded-user-id", bot: false },
+            member: {
+                roles: { cache: { some: (fn: (role: { id: string }) => boolean) => fn({ id: "excluded-role" }) } },
+            },
+        });
+        const message = discordMessage();
+        (message.channel as any).messages.fetch = vi.fn(async () => new Map([[historical.id, historical]]));
+        let request: ClassificationTask<"ROUTE" | "IGNORE"> | null = null;
+        const feature = new BetaClassifier(
+            client(),
+            {
+                classifyLazy: vi.fn(async (_fallback, buildTask) => {
+                    request = await buildTask();
+                    return result("IGNORE");
+                }),
+                drain: vi.fn(async () => undefined),
+            } as unknown as LlmClassifier,
+            auditLogger(),
+            interactionStore(),
+        );
+
+        await feature.process(message);
+        await feature.drain();
+
+        expect(request!.input).toContain("The beta Streamer must also be installed.");
+        expect(request!.input).not.toContain("excluded-user-id");
+    });
+
     it("returns from the message pipeline without waiting for provider latency", async () => {
         let resolveClassification!: (value: ClassificationResult<"ROUTE" | "IGNORE">) => void;
         const provider = new Promise<ClassificationResult<"ROUTE" | "IGNORE">>(resolve => {
@@ -138,7 +203,7 @@ describe("BetaClassifier", () => {
             return provider;
         });
         const classifier = { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(client(), classifier, auditLogger());
+        const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
 
         await feature.process(discordMessage());
 
@@ -149,15 +214,19 @@ describe("BetaClassifier", () => {
         expect(feature.getMetrics()).toMatchObject({ pending: 0, ignore: 1 });
     });
 
-    it("skips staff, bots, other guilds, other channels, and known false-positive text", async () => {
+    it("skips staff, excluded roles, bots, other guilds, other channels, and false-positive text", async () => {
         const classifyLazy = vi.fn(async () => result("ROUTE"));
         const classifier = { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(client(), classifier, auditLogger());
+        const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
         const staffMember = {
             roles: { cache: { some: (fn: (role: { id: string }) => boolean) => fn({ id: "staff-role" }) } },
         };
+        const excludedMember = {
+            roles: { cache: { some: (fn: (role: { id: string }) => boolean) => fn({ id: "excluded-role" }) } },
+        };
 
         await feature.process(discordMessage({ member: staffMember }));
+        await feature.process(discordMessage({ member: excludedMember }));
         await feature.process(discordMessage({ member: null }));
         await feature.process(discordMessage({ author: { id: "bot", bot: true } }));
         await feature.process(discordMessage({ guildId: "elsewhere" }));
@@ -167,13 +236,13 @@ describe("BetaClassifier", () => {
         expect(classifyLazy).not.toHaveBeenCalled();
     });
 
-    it("accepts a thread whose parent is an explicitly watched support channel", async () => {
+    it("accepts a thread whose text or forum parent is explicitly included", async () => {
         const classifyLazy = vi.fn(async (_fallback, buildTask) => {
             await buildTask();
             return result("IGNORE");
         });
         const classifier = { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(client(), classifier, auditLogger());
+        const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
         const message = discordMessage({
             channelId: "support-thread",
             channel: {
@@ -189,12 +258,41 @@ describe("BetaClassifier", () => {
         expect(classifyLazy).toHaveBeenCalledTimes(1);
     });
 
+    it("accepts an individually included thread and rejects a thread under another parent", async () => {
+        const testClient = client();
+        testClient.config.beta_classifier!.included_channel_ids = ["specific-thread"];
+        const classifyLazy = vi.fn(async (_fallback, buildTask) => {
+            await buildTask();
+            return result("IGNORE");
+        });
+        const feature = new BetaClassifier(
+            testClient,
+            { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier,
+            auditLogger(),
+            interactionStore(),
+        );
+        const channel = (id: string, parentId: string) => ({
+            channelId: id,
+            channel: {
+                isThread: () => true,
+                parentId,
+                messages: { cache: new Map(), fetch: vi.fn(async () => new Map()) },
+            },
+        });
+
+        await feature.process(discordMessage(channel("specific-thread", "forum")));
+        await feature.process(discordMessage(channel("other-thread", "other-forum")));
+        await feature.drain();
+
+        expect(classifyLazy).toHaveBeenCalledTimes(1);
+    });
+
     it("records provider failures as ignored fallbacks", async () => {
         const classifier = {
             classifyLazy: vi.fn(async () => result("IGNORE", "queue_full")),
             drain: vi.fn(async () => undefined),
         } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(client(), classifier, auditLogger());
+        const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
 
         await feature.process(discordMessage());
         await feature.drain();
@@ -213,7 +311,7 @@ describe("BetaClassifier", () => {
             drain: vi.fn(async () => undefined),
         } as unknown as LlmClassifier;
         const message = discordMessage();
-        const feature = new BetaClassifier(testClient, classifier, auditLogger());
+        const feature = new BetaClassifier(testClient, classifier, auditLogger(), interactionStore());
 
         await feature.process(message);
         await feature.drain();
@@ -240,6 +338,7 @@ describe("BetaClassifier", () => {
                 drain: vi.fn(async () => undefined),
             } as unknown as LlmClassifier,
             auditLogger(),
+            interactionStore(),
         );
         await ignoreFeature.process(ignoreMessage);
         await ignoreFeature.drain();
@@ -256,7 +355,7 @@ describe("BetaClassifier", () => {
             }),
             drain: vi.fn(async () => undefined),
         } as unknown as LlmClassifier;
-        const staleFeature = new BetaClassifier(staleClient, staleClassifier, auditLogger());
+        const staleFeature = new BetaClassifier(staleClient, staleClassifier, auditLogger(), interactionStore());
         await staleFeature.process(staleMessage);
         await staleFeature.drain();
         expect(staleMessage.reply).not.toHaveBeenCalled();
@@ -273,12 +372,43 @@ describe("BetaClassifier", () => {
             drain: vi.fn(async () => undefined),
         } as unknown as LlmClassifier;
         const message = discordMessage({ reply: vi.fn(async () => Promise.reject(new Error("synthetic failure"))) });
-        const feature = new BetaClassifier(testClient, classifier, auditLogger());
+        const feature = new BetaClassifier(testClient, classifier, auditLogger(), interactionStore());
 
         await feature.process(message);
         await feature.drain();
 
         expect(feature.getMetrics()).toMatchObject({ responsesSent: 0, responseFailures: 1 });
+    });
+
+    it("logs a routed decision but does not respond when encrypted persistence fails", async () => {
+        const testClient = client();
+        testClient.config.beta_classifier!.response_enabled = true;
+        const message = discordMessage();
+        const classificationLog = vi.fn(async () => undefined);
+        const feature = new BetaClassifier(
+            testClient,
+            {
+                classifyLazy: vi.fn(async (_fallback, buildTask) => {
+                    await buildTask();
+                    return result("ROUTE");
+                }),
+                drain: vi.fn(async () => undefined),
+            } as unknown as LlmClassifier,
+            auditLogger(classificationLog),
+            interactionStore({ completeClassifierRun: vi.fn(async () => Promise.reject(new Error("disk full"))) }),
+        );
+
+        await feature.process(message);
+        await feature.drain();
+
+        expect(classificationLog).toHaveBeenCalledTimes(1);
+        expect(message.reply).not.toHaveBeenCalled();
+        expect(testClient.logError).toHaveBeenCalledWith(
+            "Beta classifier record save failed",
+            expect.any(Error),
+            false,
+        );
+        expect(feature.getMetrics().persistenceFailures).toBe(1);
     });
 
     it("contains synchronous failures locally without invoking Discord error logging", async () => {
@@ -287,7 +417,7 @@ describe("BetaClassifier", () => {
             classifyLazy: vi.fn(async () => result("IGNORE")),
             drain: vi.fn(async () => undefined),
         } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(testClient, classifier, auditLogger());
+        const feature = new BetaClassifier(testClient, classifier, auditLogger(), interactionStore());
         const malformedMessage = discordMessage({
             channel: { messages: { cache: new Map(), fetch: vi.fn() } },
         });
@@ -307,7 +437,7 @@ describe("BetaClassifier", () => {
             close,
             drain: vi.fn(async () => undefined),
         } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(client(), classifier, auditLogger());
+        const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
 
         feature.stop();
         await feature.process(discordMessage());
@@ -328,7 +458,7 @@ describe("BetaClassifier", () => {
             return result("IGNORE", "disabled");
         });
         const classifier = { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(testClient, classifier, auditLogger());
+        const feature = new BetaClassifier(testClient, classifier, auditLogger(), interactionStore());
 
         await feature.process(message);
         await feature.drain();
@@ -359,7 +489,7 @@ describe("BetaClassifier", () => {
         const classifier = new LlmClassifier(() => testClient.config.llm_classifier, fetchImpl as typeof fetch, {
             FIREWORKS_API_KEY: "test-key",
         });
-        const feature = new BetaClassifier(testClient, classifier, auditLogger());
+        const feature = new BetaClassifier(testClient, classifier, auditLogger(), interactionStore());
 
         await feature.process(first);
         await feature.process(second);
@@ -383,7 +513,7 @@ describe("BetaClassifier", () => {
             return result("IGNORE");
         });
         const classifier = { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(client(), classifier, auditLogger());
+        const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
         const relevantParent = discordMessage({
             id: "parent",
             content: "Why does 1.34.19 only show Wi-Fi?",
@@ -410,7 +540,7 @@ describe("BetaClassifier", () => {
             return result("IGNORE", request ? "ok" : "invalid_request");
         });
         const classifier = { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier;
-        const feature = new BetaClassifier(client(), classifier, auditLogger());
+        const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
         const crossChannelParent = discordMessage({
             id: "parent",
             channelId: "other-channel",

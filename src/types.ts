@@ -119,11 +119,17 @@ export interface LlmClassifierConfig {
     frequency_penalty?: number;
 }
 
-export interface BetaClassifierConfig {
+export interface ClassifierScopeConfig {
+    included_channel_ids?: string[];
+    excluded_role_ids?: string[];
+}
+
+export interface BetaClassifierConfig extends ClassifierScopeConfig {
     enabled?: boolean;
     response_enabled?: boolean;
     guild_id?: string;
-    watched_channel_ids?: string[];
+    campaign_id?: string;
+    campaign_started_at?: string;
     target_channel_id?: string;
     announcement_url?: string;
     prompt_file?: string;

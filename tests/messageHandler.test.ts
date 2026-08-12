@@ -34,6 +34,11 @@ vi.mock("../src/features/autoresponder/autoResponder", () => ({
         process = H.autoProcess;
     },
 }));
+vi.mock("../src/features/userInteractions/store", () => ({
+    UserInteractionStore: class {
+        reconcileClassifierCampaigns = vi.fn(async () => undefined);
+    },
+}));
 vi.mock("../src/features/betaClassifier/betaClassifier", () => ({
     BetaClassifier: class {
         process = H.betaProcess;
@@ -62,7 +67,9 @@ function fullConfig() {
             enabled: true,
             response_enabled: false,
             guild_id: "guild-1",
-            watched_channel_ids: ["chan-1"],
+            campaign_id: "synthetic-beta",
+            campaign_started_at: new Date(Date.now() - 1_000).toISOString(),
+            included_channel_ids: ["chan-1"],
             target_channel_id: "beta-1",
             announcement_url: "https://discord.com/channels/guild/channel/message",
             prompt_file: "/private/beta-prompt.json",
@@ -183,10 +190,7 @@ describe("handleMessage pipeline semantics", () => {
         // feature still executed — one feature can't take down the pipeline.
         for (const spy of onMessageSpies) expect(spy).toHaveBeenCalledTimes(1);
         expect(client.logError).toHaveBeenCalledTimes(1);
-        expect(client.logError).toHaveBeenCalledWith(
-            expect.stringContaining("mod-ping"),
-            expect.any(Error),
-        );
+        expect(client.logError).toHaveBeenCalledWith(expect.stringContaining("mod-ping"), expect.any(Error));
     });
 
     it("skips a feature whose enabled() gate returns false", async () => {
@@ -239,9 +243,6 @@ describe("handleMessageDelete pipeline semantics", () => {
         await handleMessageDelete(deletedMessage(), client);
 
         expect(client.logError).toHaveBeenCalledTimes(1);
-        expect(client.logError).toHaveBeenCalledWith(
-            expect.stringContaining("crosspost"),
-            expect.any(Error),
-        );
+        expect(client.logError).toHaveBeenCalledWith(expect.stringContaining("crosspost"), expect.any(Error));
     });
 });

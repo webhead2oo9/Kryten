@@ -1,6 +1,7 @@
 import { Colors, EmbedBuilder, type Message } from "discord.js";
 import type { KrytenClient } from "../classes/client";
 import type { ClassificationResult, ClassificationStatus } from "./classifier";
+import { sanitizeSensitiveText } from "./privacy";
 
 export interface ClassificationLoggerMetrics {
     sent: number;
@@ -82,7 +83,8 @@ function authorized(check: () => boolean): boolean {
 }
 
 function rawOutputField(value: string): string {
-    const escaped = value.replace(/```/g, "``\u200b`");
+    const sanitized = sanitizeSensitiveText(value) || "[redacted]";
+    const escaped = sanitized.replace(/```/g, "``\u200b`");
     const output = escaped.length > 980 ? `${escaped.slice(0, 980)}\n[truncated]` : escaped;
     return `\`\`\`\n${output}\n\`\`\``;
 }

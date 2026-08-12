@@ -10,6 +10,7 @@ import { handleTwitterLinks } from "../features/twitter/twitterHandler";
 import { LlmClassifier } from "../llm/classifier";
 import { ClassificationLogger } from "../llm/classificationLogger";
 import { channelOrParentListed } from "../utils/channels";
+import { UserInteractionStore } from "../features/userInteractions/store";
 
 // Stateful handlers are built once; the registry is the single place to wire
 // features into the message pipeline.
@@ -19,15 +20,17 @@ let autoResponder: AutoResponder | null = null;
 let llmClassifier: LlmClassifier | null = null;
 let classificationLogger: ClassificationLogger | null = null;
 let betaClassifier: BetaClassifier | null = null;
+let userInteractions: UserInteractionStore | null = null;
 let features: Feature[] | null = null;
 
 function build(client: KrytenClient): void {
     crosspost = new CrosspostHandler(client);
     imageFingerprint = new ImageFingerprintHandler(client);
-    autoResponder = new AutoResponder(client);
+    userInteractions = new UserInteractionStore(client);
+    autoResponder = new AutoResponder(client, userInteractions);
     llmClassifier = new LlmClassifier(() => client.config.llm_classifier);
     classificationLogger = new ClassificationLogger(client);
-    betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger);
+    betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger, userInteractions);
 
     features = [
         {
@@ -75,14 +78,13 @@ function ensure(client: KrytenClient): Feature[] {
 }
 
 /**
- * Eagerly construct all stateful feature handlers. Called at startup so a
- * feature that cannot initialize fails the boot instead of surfacing as a
- * per-message error later. The greeter (AutoResponder) is the load-bearing case:
- * an unreadable store or missing key is fatal only when the greeter is actually
- * configured; otherwise it degrades to an empty store rather than crashing boot.
+ * Eagerly construct all stateful feature handlers. An unreadable interaction
+ * store or missing encryption key is fatal when the greeter or a persistent
+ * classifier is enabled.
  */
-export function initFeatures(client: KrytenClient): void {
+export async function initFeatures(client: KrytenClient): Promise<void> {
     ensure(client);
+    await userInteractions!.reconcileClassifierCampaigns();
 }
 
 /** Crosspost handler accessor (used by the health endpoint for metrics). */
@@ -116,6 +118,11 @@ export function getClassificationLogger(client: KrytenClient): ClassificationLog
 export function getBetaClassifier(client: KrytenClient): BetaClassifier {
     ensure(client);
     return betaClassifier!;
+}
+
+export function getUserInteractionStore(client: KrytenClient): UserInteractionStore {
+    ensure(client);
+    return userInteractions!;
 }
 
 /**

@@ -29,9 +29,9 @@ npm run test:coverage        # vitest + v8 coverage over src/
 
 ## Required runtime files (all gitignored - copy from templates)
 
-- `.env` - `DISCORD_TOKEN`, `GITHUB_PAT`, `GUILD_ID`, `USER_INTERACTIONS_ENCRYPTION_KEY` (32-byte base64/hex key; required whenever the auto-responder greeter is configured - startup fails without it, no fallback), optional `HEALTH_PORT` (default 9010), `HEALTH_HOST` (default `127.0.0.1` - loopback; set `0.0.0.0` to expose deliberately), `PROPOSAL_API_KEY` (required when `proposals.enabled`), and `FINGERPRINT_HUB_API_KEY` (required when `moderation.image_fingerprint.hub_enabled`). Copy from `template.env`.
+- `.env` - `DISCORD_TOKEN`, `GITHUB_PAT`, `GUILD_ID`, `USER_INTERACTIONS_ENCRYPTION_KEY` (32-byte base64/hex key; required whenever the auto-responder greeter or a persistent classifier is configured - startup fails without it, no fallback), optional `HEALTH_PORT` (default 9010), `HEALTH_HOST` (default `127.0.0.1` - loopback; set `0.0.0.0` to expose deliberately), `PROPOSAL_API_KEY` (required when `proposals.enabled`), and `FINGERPRINT_HUB_API_KEY` (required when `moderation.image_fingerprint.hub_enabled`). Copy from `template.env`.
 - `config.json` - all feature config (see `template.config.json` and the `Config` interface in `src/types.ts`). Loaded at startup and hot-reloadable via `/reload_config`.
-- Generated at runtime: `.commands-cache.json` (last-good commands snapshot and the ONLY local command artifact - v2 format with per-file SHAs + digest, written atomically), encrypted `data/user_interactions.json` (greeter state, AES-256-GCM via `src/utils/encryptedJson.ts`, persisted via a debounced async flush), `data/proposals.db` (staged LLM proposals, SQLite/WAL).
+- Generated at runtime: `.commands-cache.json` (last-good commands snapshot and the ONLY local command artifact - v2 format with per-file SHAs + digest, written atomically), encrypted `data/user_interactions.json` (greeter and classifier state, AES-256-GCM via `src/utils/encryptedJson.ts`), `data/proposals.db` (staged LLM proposals, SQLite/WAL).
 
 ## Architecture
 
@@ -46,7 +46,7 @@ On `ready`, `KrytenClient`:
 
 If the startup registration throws, the failure is handed to the poller's per-tick retry via `poller.markRegistrationPending()` - a plain re-poll would see "no change" forever because the digest was already adopted. The hand-off is skipped in the `"none"` case, where retrying would push an empty custom corpus and deregister the commands Discord kept.
 
-`shutdown()` (SIGINT/SIGTERM) stops the poller, proposal service, and fingerprint background tasks, closes the health server, destroys the client, **then** flushes the greeter store (destroy-first so a greeting completing mid-shutdown can't queue a save behind the flush), bounded to 5s and wrapped in try/finally so shutdown always exits.
+`shutdown()` (SIGINT/SIGTERM) stops the poller, proposal service, and fingerprint background tasks, closes the health server, destroys the client, **then** flushes the shared interaction store, bounded to 5s and wrapped in try/finally so shutdown always exits.
 
 The single `interactionCreate` listener delegates to `handleInteraction` (`src/handlers/interactionRouter.ts`): a first-match route table (context menus, editor selects/buttons/modals, proposal and image-fingerprint review buttons by prefix, custom commands + their page selects via `src/handlers/customCommandHandler.ts`, a stale-component deferUpdate catch-all, then built-in chat commands). Each route runs in a try/catch that reports to `logError` and replies ephemerally.
 

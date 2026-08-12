@@ -76,12 +76,10 @@ client.on("ready", async () => {
         healthServer = startHealthServer(client, healthPort);
     }
 
-    // Build all message-pipeline features now: a feature whose state cannot be
-    // initialized (missing USER_INTERACTIONS_ENCRYPTION_KEY with the greeter
-    // configured, unreadable encrypted store, broken fingerprint DB) must fail
-    // the boot outright — there is deliberately no degraded fallback for these.
+    // Stateful features that cannot initialize (encrypted interaction state,
+    // fingerprint DB) fail startup instead of processing with missing state.
     try {
-        initFeatures(client);
+        await initFeatures(client);
     } catch (error) {
         console.error("FATAL: feature initialization failed:", error instanceof Error ? error.message : error);
         process.exit(1);
@@ -206,10 +204,7 @@ async function shutdown(signal: string): Promise<void> {
                 setTimeout(resolve, 5000).unref();
             }),
         ]);
-        // The greeter's debounced store write sits on an unref'd timer that
-        // dies with process.exit — flush it so a user greeted in the last ~1s
-        // isn't re-greeted after restart. Bounded so a stalled disk write
-        // can't keep the process alive past the signal.
+        // Flush debounced interaction state before the unref'd timer dies.
         await Promise.race([
             getAutoResponder(client).flushNow(),
             new Promise<void>(resolve => {

@@ -8,22 +8,21 @@ import { Config } from "../types";
  * Fails closed when staff_roles is missing/empty or the member is unknown.
  */
 export function memberHasStaffRole(member: unknown, config: Config): boolean {
-    // Must be an array: a misconfigured string (e.g. "123") would turn the
-    // membership test below into String.includes — a substring match that lets
-    // any role id containing that text pass the staff gate. Fail closed instead.
     const staffRoles = Array.isArray(config.staff_roles) ? config.staff_roles : [];
     if (config.staff_roles !== undefined && !Array.isArray(config.staff_roles)) {
         console.error("config.staff_roles must be an array of role id strings; treating as empty (no staff).");
     }
-    if (!member || !staffRoles.length) return false;
+    return memberHasAnyRole(member, staffRoles);
+}
 
+export function memberHasAnyRole(member: unknown, roleIds: readonly string[]): boolean {
+    if (!member || !roleIds.length) return false;
     const roles = (member as { roles?: unknown }).roles;
     if (Array.isArray(roles)) {
-        return roles.some((roleId: unknown) => typeof roleId === "string" && staffRoles.includes(roleId));
+        return roles.some((roleId: unknown) => typeof roleId === "string" && roleIds.includes(roleId));
     }
-
     const roleCache = (roles as { cache?: { some: (fn: (role: { id: string }) => boolean) => boolean } } | undefined)
         ?.cache;
     if (!roleCache) return false;
-    return roleCache.some(role => staffRoles.includes(role.id));
+    return roleCache.some(role => roleIds.includes(role.id));
 }

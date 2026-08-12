@@ -2,6 +2,8 @@
 
 Kryten is the Virtual Desktop community's Discord support & moderation bot (discord.js v14, TypeScript). It does two largely independent jobs: it keeps a set of help-center slash commands in sync with a GitHub repository (with an in-guild editor, validation, and cached fallback), and it runs a message pipeline of moderation/utility features — scam-image fingerprinting, crosspost-spam detection, mod-ping alerts, message reporting, and more.
 
+See [PRIVACY.md](PRIVACY.md) for Kryten's data handling, retention, and deletion practices.
+
 > The name is an affectionate nod to the service mechanoid from *Red Dwarf*. This project is a community effort and is not affiliated with or endorsed by the BBC or the Red Dwarf rights holders.
 
 ## Feature Overview
@@ -37,7 +39,7 @@ Kryten is the Virtual Desktop community's Discord support & moderation bot (disc
    GITHUB_PAT=github_pat_with_repo_scope
    GUILD_ID=primary_guild_id_for_registration
    HEALTH_PORT=9010              # optional, defaults to 9010
-   USER_INTERACTIONS_ENCRYPTION_KEY=base64_32_byte_key_for_greeter_state
+   USER_INTERACTIONS_ENCRYPTION_KEY=base64_32_byte_key_for_interaction_state
    ```
 
 4. **Configure runtime** (`config.json`)
@@ -77,6 +79,7 @@ Kryten is the Virtual Desktop community's Discord support & moderation bot (disc
 | `/edit_command name:<slug>` | Staff | Load an existing custom command into the editor UI. |
 | `/reload_commands` | Staff | Force refresh from GitHub and re-register slash commands. |
 | `/reload_config` | Staff | Reload `config.json` without restarting the bot. |
+| `/delete-data` | Everyone | Delete the invoking user's encrypted interaction record. |
 
 Editor sessions support page creation, duplication, deletion, and content-block editing through buttons, select menus, and modals. Unsaved sessions are guarded to stop accidental overwrites, and validation enforces Discord's 1-32 lowercase slug format plus the block layout and per-view budgets.
 
@@ -162,4 +165,3 @@ curl http://localhost:9010/health
 
 ## License
 MIT
-

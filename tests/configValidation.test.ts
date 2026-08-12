@@ -52,7 +52,10 @@ describe("validateConfig", () => {
                 enabled: "true",
                 response_enabled: "false",
                 guild_id: "guild",
-                watched_channel_ids: "support",
+                campaign_id: "synthetic-beta",
+                campaign_started_at: "2026-08-05T16:01:00.000Z",
+                included_channel_ids: "support",
+                excluded_role_ids: "excluded-role",
                 target_channel_id: "beta",
                 announcement_url: "https://discord.com/channels/guild/channel/message",
                 prompt_file: "/private/beta-prompt.json",
@@ -81,7 +84,9 @@ describe("validateConfig", () => {
         expect(config.llm_classifier?.max_queue_age_ms).toBe(30_000);
         expect(config.llm_classifier?.max_requests_per_minute).toBe(60);
         expect(config.llm_classifier?.classification_log_channel_id).toBe("llm-log");
-        expect(config.beta_classifier?.watched_channel_ids).toEqual(["support"]);
+        expect(config.beta_classifier?.included_channel_ids).toEqual(["support"]);
+        expect(config.beta_classifier?.excluded_role_ids).toEqual(["excluded-role"]);
+        expect(config.beta_classifier?.campaign_id).toBe("synthetic-beta");
         expect(config.beta_classifier?.response_enabled).toBe(false);
         expect(config.beta_classifier?.prompt_file).toBe("/private/beta-prompt.json");
         expect(config.beta_classifier?.max_context_messages).toBe(25);
@@ -118,7 +123,9 @@ describe("validateConfig", () => {
                 beta_classifier: {
                     enabled: true,
                     response_enabled: "not-a-boolean",
-                    watched_channel_ids: [],
+                    included_channel_ids: [],
+                    campaign_id: "bad campaign id",
+                    campaign_started_at: "not-a-date",
                     max_context_messages: 26,
                 },
             }),
@@ -154,7 +161,9 @@ describe("validateConfig", () => {
                 beta_classifier: {
                     enabled: true,
                     response_enabled: "not-a-boolean",
-                    watched_channel_ids: [],
+                    included_channel_ids: [],
+                    campaign_id: "bad campaign id",
+                    campaign_started_at: "not-a-date",
                     max_context_messages: 26,
                 },
             });
@@ -175,10 +184,35 @@ describe("validateConfig", () => {
             expect(message).toContain("llm_classifier.max_concurrency");
             expect(message).toContain("beta_classifier.response_enabled");
             expect(message).toContain("beta_classifier.guild_id is required");
-            expect(message).toContain("beta_classifier.watched_channel_ids");
+            expect(message).toContain("beta_classifier.included_channel_ids");
+            expect(message).toContain("beta_classifier.campaign_id");
+            expect(message).toContain("beta_classifier.campaign_started_at");
             expect(message).toContain("beta_classifier.max_context_messages");
             expect(message).toContain("beta_classifier.prompt_file is required");
         }
+    });
+
+    it("rejects the removed beta watched-channel field", () => {
+        expect(() => validateConfig({ beta_classifier: { watched_channel_ids: ["support"] } })).toThrow(
+            /use included_channel_ids/,
+        );
+    });
+
+    it("rejects normalized-but-impossible campaign dates", () => {
+        expect(() =>
+            validateConfig({
+                beta_classifier: {
+                    enabled: true,
+                    guild_id: "guild",
+                    included_channel_ids: ["support"],
+                    campaign_id: "synthetic-beta",
+                    campaign_started_at: "2026-02-31T12:00:00Z",
+                    target_channel_id: "beta",
+                    announcement_url: "https://discord.com/channels/guild/channel/message",
+                    prompt_file: "/private/beta-prompt.json",
+                },
+            }),
+        ).toThrow(/campaign_started_at/);
     });
 
     it("rejects selecting a non-Fireworks secret for the Fireworks provider", () => {

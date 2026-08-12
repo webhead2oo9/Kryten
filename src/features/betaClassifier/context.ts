@@ -1,3 +1,5 @@
+import { sanitizeSensitiveText } from "../../llm/privacy";
+
 const MAX_MESSAGE_CHARACTERS = 4_000;
 
 export interface TranscriptMessage {
@@ -66,7 +68,7 @@ export function buildClassificationTranscript(
             if (replySpeaker) metadata.push(`reply_to=${replySpeaker}`);
             if (item.id === target.id) metadata.push("TARGET");
             const content =
-                sanitizeMessageText(item.content, options.channelLabels).slice(0, contentLimit) || "[no text]";
+                sanitizeSensitiveText(item.content, options.channelLabels).slice(0, contentLimit) || "[no text]";
             return `[${index + 1}] ${metadata.join(" ")}\n${content}`;
         });
         return `${prefix}${rendered.join("\n\n")}`;
@@ -95,18 +97,6 @@ export function buildClassificationTranscript(
         }
     }
     return transcript;
-}
-
-export function sanitizeMessageText(input: string, channelLabels: Readonly<Record<string, string>> = {}): string {
-    return input
-        .replace(/<@!?\d+>/g, "@member")
-        .replace(/<@&\d+>/g, "@role")
-        .replace(/<#(\d+)>/g, (_match, id: string) => `#${channelLabels[id] ?? "channel"}`)
-        .replace(/<a?:([A-Za-z0-9_]+):\d+>/g, ":$1:")
-        .replace(/https?:\/\/\S+/gi, "[link omitted]")
-        .replace(/\b\d{17,20}\b/g, "[id omitted]")
-        .replace(/\s+$/g, "")
-        .trim();
 }
 
 function alphabeticIndex(index: number): string {

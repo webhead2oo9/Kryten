@@ -1,10 +1,17 @@
 import type { Message } from "discord.js";
 import type { KrytenClient } from "../../classes/client";
 import type { BetaClassifierConfig, LlmClassifierConfig } from "../../types";
-import { memberHasStaffRole } from "../../utils/staff";
+import { memberHasAnyRole, memberHasStaffRole } from "../../utils/staff";
 import { channelOrParentListed } from "../../utils/channels";
 import { LlmClassifier } from "../../llm/classifier";
 import { ClassificationLogger } from "../../llm/classificationLogger";
+import {
+    BETA_CLASSIFIER_ID,
+    ClassifierCampaign,
+    ClassifierRun,
+    classifierCampaignIsActive,
+    UserInteractionStore,
+} from "../userInteractions/store";
 import { betaCandidateDecision } from "./candidateGate";
 import { buildClassificationTranscript, TranscriptMessage } from "./context";
 import { loadBetaClassifierPrompt } from "./promptFile";
@@ -23,6 +30,10 @@ export interface BetaClassifierMetrics {
     promptLoadFailures: number;
     responsesSent: number;
     responseFailures: number;
+    persistenceFailures: number;
+    alreadyRouted: number;
+    duplicateInFlight: number;
+    campaignExpired: number;
     pending: number;
     responseEnabled: boolean;
     promptVersion: string | null;
@@ -48,12 +59,17 @@ export class BetaClassifier {
         promptLoadFailures: 0,
         responsesSent: 0,
         responseFailures: 0,
+        persistenceFailures: 0,
+        alreadyRouted: 0,
+        duplicateInFlight: 0,
+        campaignExpired: 0,
     };
 
     constructor(
         private readonly client: KrytenClient,
         private readonly classifier: LlmClassifier,
         private readonly classificationLogger: ClassificationLogger,
+        private readonly interactions: UserInteractionStore,
     ) {}
 
     async process(message: Message): Promise<void> {
@@ -69,7 +85,16 @@ export class BetaClassifier {
             if (!decision.candidate && !referencedContinuation) return;
             this.metrics.candidates++;
 
-            const task = this.classify(message, config!, llmConfig, referencedContinuation);
+            const campaign = this.campaign(config!);
+            const admission = await this.interactions.beginClassifierRun(message.author.id, campaign);
+            if (admission.status !== "acquired") {
+                if (admission.status === "already_routed") this.metrics.alreadyRouted++;
+                else if (admission.status === "busy") this.metrics.duplicateInFlight++;
+                else this.metrics.campaignExpired++;
+                return;
+            }
+
+            const task = this.classify(message, config!, llmConfig, referencedContinuation, campaign, admission.run);
             this.pending.add(task);
             void task.then(
                 () => this.pending.delete(task),
@@ -105,9 +130,11 @@ export class BetaClassifier {
         if (message.author.bot) return false;
         if (!config.guild_id || message.guildId !== config.guild_id) return false;
         if (!message.member) return false;
-        if (!channelOrParentListed(message.channel, message.channelId, config.watched_channel_ids ?? [])) return false;
+        if (!channelOrParentListed(message.channel, message.channelId, config.included_channel_ids ?? [])) return false;
         if (channelOrParentListed(message.channel, message.channelId, [config.target_channel_id ?? ""])) return false;
         if (memberHasStaffRole(message.member, this.client.config)) return false;
+        if (memberHasAnyRole(message.member, config.excluded_role_ids ?? [])) return false;
+        if (!classifierCampaignIsActive(this.campaign(config))) return false;
         return true;
     }
 
@@ -116,13 +143,16 @@ export class BetaClassifier {
         acceptedConfig: BetaClassifierConfig,
         acceptedLlmConfig: LlmClassifierConfig,
         referencedContinuation: boolean,
+        campaign: ClassifierCampaign,
+        run: ClassifierRun,
     ): Promise<void> {
+        let released = false;
         try {
             this.metrics.submitted++;
             const result = await this.classifier.classifyLazy(
                 "IGNORE",
                 async () => {
-                    if (!this.isAuthorized(message, acceptedConfig, acceptedLlmConfig)) return null;
+                    if (!this.runIsAuthorized(message, acceptedConfig, acceptedLlmConfig, run)) return null;
                     let prompt;
                     try {
                         prompt = await loadBetaClassifierPrompt(acceptedConfig.prompt_file!);
@@ -147,18 +177,48 @@ export class BetaClassifier {
                         fallbackLabel: "IGNORE",
                     };
                 },
-                () => this.isAuthorized(message, acceptedConfig, acceptedLlmConfig),
+                () => this.runIsAuthorized(message, acceptedConfig, acceptedLlmConfig, run),
             );
             if (result.status !== "ok") this.metrics.providerFallbacks++;
             if (result.label === "ROUTE") this.metrics.route++;
             else this.metrics.ignore++;
 
-            const isAuthorized = () => this.isAuthorized(message, acceptedConfig, acceptedLlmConfig);
+            const isAuthorized = () =>
+                this.isAuthorized(message, acceptedConfig, acceptedLlmConfig) &&
+                this.interactions.isUserGenerationCurrent(run);
+            let stored = false;
+            if (result.status === "ok" && isAuthorized()) {
+                try {
+                    const completion = await this.interactions.completeClassifierRun(
+                        run,
+                        campaign,
+                        result.label,
+                        Math.floor(Date.now() / 1_000),
+                    );
+                    released = true;
+                    if (completion === "cancelled") return;
+                    stored = true;
+                } catch (error) {
+                    released = true;
+                    this.metrics.persistenceFailures++;
+                    await this.client
+                        .logError(
+                            "Beta classifier record save failed",
+                            error instanceof Error ? error : String(error),
+                            false,
+                        )
+                        .catch(() => undefined);
+                }
+            } else {
+                await this.interactions.releaseClassifierRun(run);
+                released = true;
+            }
             await this.classificationLogger.log(message, result, isAuthorized);
 
             if (
                 result.status === "ok" &&
                 result.label === "ROUTE" &&
+                stored &&
                 acceptedConfig.response_enabled &&
                 isAuthorized()
             ) {
@@ -174,6 +234,8 @@ export class BetaClassifier {
             }
         } catch {
             this.metrics.providerFallbacks++;
+        } finally {
+            if (!released) await this.interactions.releaseClassifierRun(run);
         }
     }
 
@@ -184,6 +246,23 @@ export class BetaClassifier {
             llmConfig.enabled === true &&
             this.isEligible(message, betaConfig)
         );
+    }
+
+    private runIsAuthorized(
+        message: Message,
+        betaConfig: BetaClassifierConfig,
+        llmConfig: LlmClassifierConfig,
+        run: ClassifierRun,
+    ): boolean {
+        return this.isAuthorized(message, betaConfig, llmConfig) && this.interactions.isClassifierRunCurrent(run);
+    }
+
+    private campaign(config: BetaClassifierConfig): ClassifierCampaign {
+        return {
+            classifierId: BETA_CLASSIFIER_ID,
+            campaignId: config.campaign_id ?? "",
+            startedAt: config.campaign_started_at ?? "",
+        };
     }
 
     private async contextFor(message: Message, config: BetaClassifierConfig): Promise<BuiltContext | null> {
