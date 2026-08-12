@@ -50,7 +50,7 @@ function discordMessage(overrides: Record<string, unknown> = {}): Message {
         id: "target",
         guildId: "guild",
         channelId: "support",
-        content: "Why does 1.34.19 only show Wi-Fi?",
+        content: "Why does 1.34.20 only show Wi-Fi?",
         createdTimestamp: 2,
         author: { id: "author", bot: false },
         member: { roles: { cache: { some: () => false } } },
@@ -516,7 +516,7 @@ describe("BetaClassifier", () => {
         const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
         const relevantParent = discordMessage({
             id: "parent",
-            content: "Why does 1.34.19 only show Wi-Fi?",
+            content: "Why does 1.34.20 only show Wi-Fi?",
             createdTimestamp: 1,
         });
         const message = discordMessage({
@@ -529,7 +529,7 @@ describe("BetaClassifier", () => {
         await feature.drain();
 
         expect(message.fetchReference).toHaveBeenCalledTimes(1);
-        expect(request!.input).toContain("Why does 1.34.19 only show Wi-Fi?");
+        expect(request!.input).toContain("Why does 1.34.20 only show Wi-Fi?");
         expect(request!.input).toContain("same here");
     });
 
@@ -544,7 +544,7 @@ describe("BetaClassifier", () => {
         const crossChannelParent = discordMessage({
             id: "parent",
             channelId: "other-channel",
-            content: "Why does 1.34.19 only show Wi-Fi?",
+            content: "Why does 1.34.20 only show Wi-Fi?",
             createdTimestamp: 1,
         });
         const message = discordMessage({

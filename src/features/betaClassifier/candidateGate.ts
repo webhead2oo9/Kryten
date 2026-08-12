@@ -6,9 +6,10 @@ export interface CandidateDecision {
 const SUPPORT_INTENT =
     /\?|\b(?:help|how|why|where|what|when|can|could|does|do|is|are|anyone|issue|problem|broken|fail(?:ed|ing)?|cannot|can't|cant|won't|wont|unable|missing|stuck|spinner|spinning|forever|still (?:on|shows?|running)|only shows?|not showing|not working|disconnect(?:ion)?s?|disconnected|disconnecting|drops?|freez(?:e|es|ing)|frozen|stutter(?:s|ing)?|crash(?:es|ed|ing)?|latency|lag|black screen|no usb|no wired)\b/i;
 const VD_CONTEXT = /\b(?:virtual desktop|vd|streamer|headset app)\b/i;
-const ACTIVE_VERSION = /\b1\.34\.19\b/i;
+const ACTIVE_VERSION = /\b1\.34\.20\b/i;
 const BETA_CONTEXT = /\b(?:beta streamer|vd beta|virtual desktop beta|beta release channel|beta channel)\b/i;
 const USB_MODE = /\b(?:usb(?:\s+ncm)?|ncm|wired|cabled|on cable|via cable|over cable)\b/i;
+const USB_KEYWORD = /\b(?:beta\s+usb\s+setup|usb\s+cable)\b/i;
 const CONNECTION_OR_PERFORMANCE =
     /\b(?:connect(?:ion|ed|ing)?|detect(?:ed|ing)?|recogniz(?:e|ed|ing)|show(?:s|ing)?|tag|mode|wired|wi-?fi|stream(?:ing)?|disconnect(?:ion)?s?|disconnected|disconnecting|drops?|freez(?:e|es|ing)|frozen|stutter(?:s|ing)?|crash(?:es|ed|ing)?|latency|lag|bitrate|black screen|unreachable|restart(?:s|ed|ing)?)\b/i;
 const TWELVE_MINUTE = /\b(?:12|twelve)(?:\.5)?\s*(?:min(?:ute)?s?)\b/i;
@@ -28,10 +29,13 @@ export function betaCandidateDecision(text: string): CandidateDecision {
     if (!normalized || !SUPPORT_INTENT.test(normalized)) return { candidate: false, reasons: [] };
 
     const version = ACTIVE_VERSION.test(normalized);
+    const betaKeyword = /\bbeta\b/i.test(normalized);
     const explicitBeta = BETA_CONTEXT.test(normalized) || (/\bbeta\b/i.test(normalized) && VD_CONTEXT.test(normalized));
     const betaInstall =
-        /\bbeta\b/i.test(normalized) &&
-        /\b(?:install|download|update|switch|select|find|option|channel|version|1\.34\.18)\w*/i.test(normalized);
+        betaKeyword &&
+        /\b(?:install|download|update|switch|select|find|option|channel|version|setup|1\.34\.(?:18|19))\w*/i.test(
+            normalized,
+        );
     const betaFeature =
         /\bbeta\b/i.test(normalized) &&
         /\b(?:96|100)\s*fps\b|\b(?:graphics quality|render resolution)\b/i.test(normalized);
@@ -44,7 +48,9 @@ export function betaCandidateDecision(text: string): CandidateDecision {
     const terseCabledIssue =
         /\b(?:on cabled|on cable|cabled|wired|via usb|over usb)\b/i.test(normalized) && connectionIssue;
     const directUsb = usbMode && connectionIssue && (vdContext || headsetContext || terseCabledIssue);
-    const strongBetaEvidence = version || explicitBeta || betaInstall || betaFeature || ncm || twelveMinute;
+    const usbKeyword = USB_KEYWORD.test(normalized);
+    const strongBetaEvidence =
+        version || betaKeyword || explicitBeta || betaInstall || betaFeature || ncm || twelveMinute || usbKeyword;
 
     if (OTHER_BETA.test(normalized) && !vdContext && !version) {
         return { candidate: false, reasons: ["other-beta"] };
@@ -61,11 +67,13 @@ export function betaCandidateDecision(text: string): CandidateDecision {
 
     const reasons: string[] = [];
     if (version) reasons.push("active-version");
+    if (betaKeyword) reasons.push("beta-keyword");
     if (explicitBeta) reasons.push("explicit-vd-beta");
     if (betaInstall) reasons.push("beta-install");
     if (betaFeature) reasons.push("beta-feature");
     if (ncm) reasons.push("usb-ncm");
     if (twelveMinute) reasons.push("twelve-minute-restart");
     if (directUsb) reasons.push("direct-usb-context");
+    if (usbKeyword) reasons.push("usb-keyword");
     return { candidate: reasons.length > 0, reasons };
 }
