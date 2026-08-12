@@ -51,6 +51,9 @@ describe("validateConfig", () => {
             beta_classifier: {
                 enabled: "true",
                 response_enabled: "false",
+                target_greeting_enabled: "true",
+                target_greeting_delete_after_seconds: "45",
+                announcements_channel_id: "announcements",
                 guild_id: "guild",
                 campaign_id: "synthetic-beta",
                 campaign_started_at: "2026-08-05T16:01:00.000Z",
@@ -88,6 +91,9 @@ describe("validateConfig", () => {
         expect(config.beta_classifier?.excluded_role_ids).toEqual(["excluded-role"]);
         expect(config.beta_classifier?.campaign_id).toBe("synthetic-beta");
         expect(config.beta_classifier?.response_enabled).toBe(false);
+        expect(config.beta_classifier?.target_greeting_enabled).toBe(true);
+        expect(config.beta_classifier?.target_greeting_delete_after_seconds).toBe(45);
+        expect(config.beta_classifier?.announcements_channel_id).toBe("announcements");
         expect(config.beta_classifier?.prompt_file).toBe("/private/beta-prompt.json");
         expect(config.beta_classifier?.max_context_messages).toBe(25);
     });

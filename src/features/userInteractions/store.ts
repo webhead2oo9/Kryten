@@ -12,6 +12,7 @@ const MAX_TIMER_DELAY_MS = 2_147_000_000;
 const CAMPAIGN_PURGE_RETRY_MS = 60_000;
 export const CLASSIFIER_CAMPAIGN_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 export const BETA_CLASSIFIER_ID = "beta";
+export const BETA_GREETING_ID = "beta";
 
 export type ClassifierDecision = "ROUTE" | "IGNORE";
 
@@ -47,6 +48,15 @@ interface StoredClassifierRecord {
 
 interface GreetingSnapshot {
     record?: GreetingRecord;
+    generation: number;
+}
+
+export interface CampaignGreetingRecord {
+    campaignId: string;
+}
+
+export interface CampaignGreetingSnapshot {
+    record?: CampaignGreetingRecord;
     generation: number;
 }
 
@@ -90,6 +100,32 @@ export class UserInteractionStore {
             const next = { ...(this.records.get(userId) ?? {}), ...record };
             if (record.owedFullWelcome === undefined) delete next["owedFullWelcome"];
             this.records.set(userId, next);
+            this.dirty = true;
+            this.scheduleSave();
+            return true;
+        });
+    }
+
+    async getCampaignGreeting(userId: string, greetingId: string): Promise<CampaignGreetingSnapshot> {
+        return this.exclusive(() => ({
+            record: campaignGreetingRecord(this.records.get(userId), greetingId),
+            generation: this.generation(userId),
+        }));
+    }
+
+    async setCampaignGreeting(
+        userId: string,
+        greetingId: string,
+        record: CampaignGreetingRecord,
+        generation: number,
+    ): Promise<boolean> {
+        return this.exclusive(() => {
+            if (this.generation(userId) !== generation) return false;
+            const user = { ...(this.records.get(userId) ?? {}) };
+            const greetings = isRecord(user["campaignGreetings"]) ? { ...user["campaignGreetings"] } : {};
+            greetings[greetingId] = record;
+            user["campaignGreetings"] = greetings;
+            this.records.set(userId, user);
             this.dirty = true;
             this.scheduleSave();
             return true;
@@ -263,7 +299,8 @@ export class UserInteractionStore {
     private persistenceRequired(): boolean {
         return Boolean(
             this.client.config.auto_responder?.random_greeting_channel_id ||
-            this.client.config.beta_classifier?.enabled,
+            this.client.config.beta_classifier?.enabled ||
+            this.client.config.beta_classifier?.target_greeting_enabled,
         );
     }
 
@@ -432,6 +469,16 @@ function classifierRecord(
     };
 }
 
+function campaignGreetingRecord(
+    value: Record<string, unknown> | undefined,
+    greetingId: string,
+): CampaignGreetingRecord | undefined {
+    if (!value || !isRecord(value["campaignGreetings"])) return undefined;
+    const candidate = value["campaignGreetings"][greetingId];
+    if (!isRecord(candidate) || typeof candidate["campaignId"] !== "string") return undefined;
+    return { campaignId: candidate["campaignId"] };
+}
+
 function classifierRunKey(classifierId: string, userId: string): string {
     return `${classifierId}\u0000${userId}`;
 }
@@ -467,6 +514,18 @@ function pruneRecords(
             }
             if (Object.keys(classifiers).length) record["classifiers"] = classifiers;
             else delete record["classifiers"];
+        }
+        if (isRecord(record["campaignGreetings"])) {
+            const greetings = { ...record["campaignGreetings"] };
+            const betaGreeting = campaignGreetingRecord(record, BETA_GREETING_ID);
+            if (
+                BETA_GREETING_ID in greetings &&
+                (!betaGreeting || !betaActive || betaGreeting.campaignId !== beta?.campaignId)
+            ) {
+                delete greetings[BETA_GREETING_ID];
+            }
+            if (Object.keys(greetings).length) record["campaignGreetings"] = greetings;
+            else delete record["campaignGreetings"];
         }
         if (Object.keys(record).length) output.set(userId, record);
     }

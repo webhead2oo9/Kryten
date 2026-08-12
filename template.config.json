@@ -90,6 +90,9 @@
     "beta_classifier": {
         "enabled": false,
         "response_enabled": false,
+        "target_greeting_enabled": false,
+        "target_greeting_delete_after_seconds": 45,
+        "announcements_channel_id": "YOUR_ANNOUNCEMENTS_CHANNEL_ID_HERE",
         "guild_id": "YOUR_GUILD_ID_HERE",
         "campaign_id": "YOUR_CAMPAIGN_ID_HERE",
         "campaign_started_at": "2026-01-01T00:00:00.000Z",
