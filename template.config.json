@@ -70,6 +70,36 @@
         "store_path": "./data/user_interactions.json",
         "encryption_key_env": "USER_INTERACTIONS_ENCRYPTION_KEY"
     },
+    "llm_classifier": {
+        "enabled": false,
+        "provider": "fireworks",
+        "model": "YOUR_FIREWORKS_MODEL_ID_HERE",
+        "api_key_env": "FIREWORKS_API_KEY",
+        "classification_log_channel_id": "YOUR_LLM_CLASSIFICATION_LOG_CHANNEL_ID_HERE",
+        "timeout_ms": 30000,
+        "max_output_tokens": 131072,
+        "max_concurrency": 1,
+        "max_queue_depth": 25,
+        "max_queue_age_ms": 30000,
+        "max_requests_per_minute": 60,
+        "temperature": 0,
+        "top_k": 40,
+        "presence_penalty": 0,
+        "frequency_penalty": 0
+    },
+    "beta_classifier": {
+        "enabled": false,
+        "response_enabled": false,
+        "guild_id": "YOUR_GUILD_ID_HERE",
+        "watched_channel_ids": [
+            "YOUR_SUPPORT_CHANNEL_ID_HERE"
+        ],
+        "target_channel_id": "YOUR_BETA_CHANNEL_ID_HERE",
+        "announcement_url": "https://discord.com/channels/YOUR_GUILD_ID/YOUR_CHANNEL_ID/YOUR_MESSAGE_ID",
+        "prompt_file": "YOUR_PRIVATE_BETA_CLASSIFIER_PROMPT_FILE_HERE",
+        "max_context_messages": 25,
+        "max_context_characters": 40000
+    },
     "twitter": {
         "enabled": false,
         "enabled_channels": [],

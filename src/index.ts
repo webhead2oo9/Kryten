@@ -4,6 +4,7 @@ import { ActivityType, PresenceUpdateStatus, Message, Partials } from "discord.j
 import { KrytenClient } from "./classes/client";
 import {
     getAutoResponder,
+    getBetaClassifier,
     getImageFingerprintHandler,
     handleMessage,
     handleMessageDelete,
@@ -192,11 +193,19 @@ async function shutdown(signal: string): Promise<void> {
         client.poller.stop();
         client.proposalService?.stop();
         getImageFingerprintHandler(client).stop();
+        const betaClassifier = getBetaClassifier(client);
+        betaClassifier.stop();
         healthServer?.close();
         // Destroy the client BEFORE flushing the greeter: the gateway stops
         // delivering messages, so a greeting completing mid-shutdown can't
         // queue a save behind the flush and lose it to process.exit.
         await client.destroy();
+        await Promise.race([
+            betaClassifier.drain(),
+            new Promise<void>(resolve => {
+                setTimeout(resolve, 5000).unref();
+            }),
+        ]);
         // The greeter's debounced store write sits on an unref'd timer that
         // dies with process.exit — flush it so a user greeted in the last ~1s
         // isn't re-greeted after restart. Bounded so a stalled disk write

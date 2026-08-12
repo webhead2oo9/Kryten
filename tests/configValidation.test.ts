@@ -38,6 +38,26 @@ describe("validateConfig", () => {
                 ttl_hours: "12.5",
                 rate_limit_per_minute: "60",
             },
+            llm_classifier: {
+                enabled: "true",
+                provider: "fireworks",
+                model: "accounts/fireworks/models/example",
+                classification_log_channel_id: "llm-log",
+                timeout_ms: "45000",
+                max_concurrency: "2",
+                max_queue_age_ms: "30000",
+                max_requests_per_minute: "60",
+            },
+            beta_classifier: {
+                enabled: "true",
+                response_enabled: "false",
+                guild_id: "guild",
+                watched_channel_ids: "support",
+                target_channel_id: "beta",
+                announcement_url: "https://discord.com/channels/guild/channel/message",
+                prompt_file: "/private/beta-prompt.json",
+                max_context_messages: "25",
+            },
         });
 
         expect(config.staff_roles).toEqual(["staff-role"]);
@@ -55,6 +75,16 @@ describe("validateConfig", () => {
         expect(config.proposals?.max_pending).toBe(2);
         expect(config.proposals?.ttl_hours).toBe(12.5);
         expect(config.proposals?.rate_limit_per_minute).toBe(60);
+        expect(config.llm_classifier?.enabled).toBe(true);
+        expect(config.llm_classifier?.timeout_ms).toBe(45_000);
+        expect(config.llm_classifier?.max_concurrency).toBe(2);
+        expect(config.llm_classifier?.max_queue_age_ms).toBe(30_000);
+        expect(config.llm_classifier?.max_requests_per_minute).toBe(60);
+        expect(config.llm_classifier?.classification_log_channel_id).toBe("llm-log");
+        expect(config.beta_classifier?.watched_channel_ids).toEqual(["support"]);
+        expect(config.beta_classifier?.response_enabled).toBe(false);
+        expect(config.beta_classifier?.prompt_file).toBe("/private/beta-prompt.json");
+        expect(config.beta_classifier?.max_context_messages).toBe(25);
     });
 
     it("rejects unsafe or malformed known settings", () => {
@@ -77,6 +107,19 @@ describe("validateConfig", () => {
                 },
                 proposals: {
                     ttl_hours: 0,
+                },
+                llm_classifier: {
+                    enabled: true,
+                    provider: "arbitrary-provider",
+                    model: "",
+                    api_key_env: "not-portable",
+                    max_concurrency: 0,
+                },
+                beta_classifier: {
+                    enabled: true,
+                    response_enabled: "not-a-boolean",
+                    watched_channel_ids: [],
+                    max_context_messages: 26,
                 },
             }),
         ).toThrow(ConfigValidationError);
@@ -101,6 +144,19 @@ describe("validateConfig", () => {
                 proposals: {
                     ttl_hours: 0,
                 },
+                llm_classifier: {
+                    enabled: true,
+                    provider: "arbitrary-provider",
+                    model: "",
+                    api_key_env: "not-portable",
+                    max_concurrency: 0,
+                },
+                beta_classifier: {
+                    enabled: true,
+                    response_enabled: "not-a-boolean",
+                    watched_channel_ids: [],
+                    max_context_messages: 26,
+                },
             });
         } catch (error) {
             expect(error).toBeInstanceOf(ConfigValidationError);
@@ -113,6 +169,28 @@ describe("validateConfig", () => {
             expect(message).toContain("moderation.image_fingerprint.hub_base_url");
             expect(message).toContain("twitter.embed_service");
             expect(message).toContain("proposals.ttl_hours");
+            expect(message).toContain("llm_classifier.provider");
+            expect(message).toContain("llm_classifier.model is required");
+            expect(message).toContain("llm_classifier.api_key_env");
+            expect(message).toContain("llm_classifier.max_concurrency");
+            expect(message).toContain("beta_classifier.response_enabled");
+            expect(message).toContain("beta_classifier.guild_id is required");
+            expect(message).toContain("beta_classifier.watched_channel_ids");
+            expect(message).toContain("beta_classifier.max_context_messages");
+            expect(message).toContain("beta_classifier.prompt_file is required");
         }
+    });
+
+    it("rejects selecting a non-Fireworks secret for the Fireworks provider", () => {
+        expect(() =>
+            validateConfig({
+                llm_classifier: {
+                    enabled: true,
+                    provider: "fireworks",
+                    model: "accounts/fireworks/models/example",
+                    api_key_env: "DISCORD_TOKEN",
+                },
+            }),
+        ).toThrow(/FIREWORKS_\* variable/);
     });
 });

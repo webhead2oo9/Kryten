@@ -101,6 +101,36 @@ export interface AutoResponderConfig {
     encryption_key_env?: string; // Env var holding the 32-byte AES key (default USER_INTERACTIONS_ENCRYPTION_KEY)
 }
 
+export interface LlmClassifierConfig {
+    enabled?: boolean;
+    provider?: "fireworks";
+    model?: string;
+    api_key_env?: string;
+    classification_log_channel_id?: string;
+    timeout_ms?: number;
+    max_output_tokens?: number;
+    max_concurrency?: number;
+    max_queue_depth?: number;
+    max_queue_age_ms?: number;
+    max_requests_per_minute?: number;
+    temperature?: number;
+    top_k?: number;
+    presence_penalty?: number;
+    frequency_penalty?: number;
+}
+
+export interface BetaClassifierConfig {
+    enabled?: boolean;
+    response_enabled?: boolean;
+    guild_id?: string;
+    watched_channel_ids?: string[];
+    target_channel_id?: string;
+    announcement_url?: string;
+    prompt_file?: string;
+    max_context_messages?: number;
+    max_context_characters?: number;
+}
+
 export interface TwitterConfig {
     enabled?: boolean; // Master switch (default false)
     enabled_channels?: string[]; // Channels where Twitter/X links are reposted
@@ -126,6 +156,8 @@ export interface Config {
     error_log_channel_id?: string; // Channel ID for error logging
     moderation?: ModerationConfig;
     auto_responder?: AutoResponderConfig;
+    llm_classifier?: LlmClassifierConfig;
+    beta_classifier?: BetaClassifierConfig;
     twitter?: TwitterConfig;
     proposals?: ProposalsConfig;
 }

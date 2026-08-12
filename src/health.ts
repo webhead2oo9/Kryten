@@ -1,6 +1,12 @@
 import { createServer, Server } from "http";
 import { KrytenClient } from "./classes/client";
-import { getCrosspostHandler, getImageFingerprintHandler } from "./handlers/messageHandler";
+import {
+    getBetaClassifier,
+    getClassificationLogger,
+    getCrosspostHandler,
+    getImageFingerprintHandler,
+    getLlmClassifier,
+} from "./handlers/messageHandler";
 import { COMMANDS_READ_PATH, handleCommandRead } from "./api/commandRead";
 import { handleProposalIntake } from "./api/proposalIntake";
 
@@ -46,6 +52,9 @@ export function startHealthServer(client: KrytenClient, port: number): Server {
                             corpusSize: getImageFingerprintHandler(client).store.size,
                             hubActive: getImageFingerprintHandler(client).store.hubActive,
                         },
+                        llmClassifier: getLlmClassifier(client).getMetrics(),
+                        classificationLogger: getClassificationLogger(client).getMetrics(),
+                        betaClassifier: getBetaClassifier(client).getMetrics(),
                     },
                     errors: {
                         recent: client.errorCount,

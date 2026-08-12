@@ -1,8 +1,10 @@
 import type {
     AutoResponderConfig,
+    BetaClassifierConfig,
     Config,
     CrosspostConfig,
     ImageFingerprintConfig,
+    LlmClassifierConfig,
     ModerationConfig,
     ModerationTimeoutConfig,
     ProposalsConfig,
@@ -10,15 +12,45 @@ import type {
 } from "../types";
 
 type JsonObject = Record<string, unknown>;
+type NumberOptions = { integer?: boolean; min?: number; max?: number };
+type NumericKey<T> = {
+    [K in keyof T]-?: NonNullable<T[K]> extends number ? K : never;
+}[keyof T] &
+    string;
 
 const MAX_TIMEOUT_MINUTES = 28 * 24 * 60;
 const IMAGE_CATEGORIES = ["scam", "nsfw", "crypto", "phishing", "other"] as const;
+const LLM_CLASSIFIER_NUMBER_FIELDS: ReadonlyArray<readonly [NumericKey<LlmClassifierConfig>, NumberOptions]> = [
+    ["timeout_ms", { integer: true, min: 1_000, max: 300_000 }],
+    ["max_output_tokens", { integer: true, min: 1, max: 131_072 }],
+    ["max_concurrency", { integer: true, min: 1, max: 16 }],
+    ["max_queue_depth", { integer: true, min: 0, max: 10_000 }],
+    ["max_queue_age_ms", { integer: true, min: 1_000, max: 300_000 }],
+    ["max_requests_per_minute", { integer: true, min: 1, max: 10_000 }],
+    ["temperature", { min: 0, max: 2 }],
+    ["top_k", { integer: true, min: 1, max: 200 }],
+    ["presence_penalty", { min: -2, max: 2 }],
+    ["frequency_penalty", { min: -2, max: 2 }],
+];
 
 export class ConfigValidationError extends Error {
     constructor(readonly issues: string[]) {
         super(`config.json has invalid values:\n- ${issues.join("\n- ")}`);
         this.name = "ConfigValidationError";
     }
+}
+
+function optionalEnvironmentVariable(
+    parent: JsonObject,
+    key: string,
+    path: string,
+    issues: string[],
+): string | undefined {
+    const value = optionalString(parent, key, path, issues);
+    if (value === undefined) return undefined;
+    if (/^[A-Z_][A-Z0-9_]*$/.test(value)) return value;
+    issues.push(`${path} must be an uppercase environment-variable name`);
+    return undefined;
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -89,7 +121,7 @@ function optionalNumber(
     key: string,
     path: string,
     issues: string[],
-    options: { integer?: boolean; min?: number; max?: number } = {},
+    options: NumberOptions = {},
 ): number | undefined {
     const value = parent[key];
     if (value === undefined) return undefined;
@@ -162,6 +194,18 @@ function assignBoolean<T extends object, K extends keyof T>(target: T, key: K, v
 
 function assignNumber<T extends object, K extends keyof T>(target: T, key: K, value: number | undefined): void {
     if (value !== undefined) target[key] = value as T[K];
+}
+
+function assignOptionalNumbers<T extends object>(
+    target: T,
+    input: JsonObject,
+    path: string,
+    issues: string[],
+    fields: ReadonlyArray<readonly [NumericKey<T>, NumberOptions]>,
+): void {
+    for (const [key, options] of fields) {
+        assignNumber(target, key, optionalNumber(input, key, `${path}.${key}`, issues, options));
+    }
 }
 
 function validateTimeout(input: JsonObject, issues: string[]): ModerationTimeoutConfig {
@@ -448,6 +492,91 @@ function validateAutoResponder(input: JsonObject, issues: string[]): AutoRespond
     return out;
 }
 
+function validateLlmClassifier(input: JsonObject, issues: string[]): LlmClassifierConfig {
+    const out: LlmClassifierConfig = {};
+    assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "llm_classifier.enabled", issues));
+
+    const provider = optionalEnum(input, "provider", "llm_classifier.provider", issues, ["fireworks"] as const);
+    if (provider !== undefined) out.provider = provider;
+
+    assignString(out, "model", optionalString(input, "model", "llm_classifier.model", issues));
+    assignString(
+        out,
+        "api_key_env",
+        optionalEnvironmentVariable(input, "api_key_env", "llm_classifier.api_key_env", issues),
+    );
+    assignString(
+        out,
+        "classification_log_channel_id",
+        optionalString(input, "classification_log_channel_id", "llm_classifier.classification_log_channel_id", issues),
+    );
+
+    if (provider === "fireworks" && out.api_key_env && !/^FIREWORKS_[A-Z0-9_]*$/.test(out.api_key_env)) {
+        issues.push("llm_classifier.api_key_env must name a FIREWORKS_* variable for the Fireworks provider");
+    }
+
+    assignOptionalNumbers(out, input, "llm_classifier", issues, LLM_CLASSIFIER_NUMBER_FIELDS);
+
+    if (out.enabled && !out.provider) issues.push("llm_classifier.provider is required when enabled");
+    if (out.enabled && !out.model) issues.push("llm_classifier.model is required when enabled");
+    return out;
+}
+
+function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassifierConfig {
+    const out: BetaClassifierConfig = {};
+    assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "beta_classifier.enabled", issues));
+    assignBoolean(
+        out,
+        "response_enabled",
+        optionalBoolean(input, "response_enabled", "beta_classifier.response_enabled", issues),
+    );
+    assignString(out, "guild_id", optionalString(input, "guild_id", "beta_classifier.guild_id", issues));
+    assignStringArray(
+        out,
+        "watched_channel_ids",
+        optionalStringArray(input, "watched_channel_ids", "beta_classifier.watched_channel_ids", issues),
+    );
+    assignString(
+        out,
+        "target_channel_id",
+        optionalString(input, "target_channel_id", "beta_classifier.target_channel_id", issues),
+    );
+    assignString(
+        out,
+        "announcement_url",
+        optionalUrl(input, "announcement_url", "beta_classifier.announcement_url", issues),
+    );
+    assignString(out, "prompt_file", optionalString(input, "prompt_file", "beta_classifier.prompt_file", issues));
+    assignNumber(
+        out,
+        "max_context_messages",
+        optionalNumber(input, "max_context_messages", "beta_classifier.max_context_messages", issues, {
+            integer: true,
+            min: 1,
+            max: 25,
+        }),
+    );
+    assignNumber(
+        out,
+        "max_context_characters",
+        optionalNumber(input, "max_context_characters", "beta_classifier.max_context_characters", issues, {
+            integer: true,
+            min: 1_000,
+            max: 200_000,
+        }),
+    );
+    if (out.enabled) {
+        if (!out.guild_id) issues.push("beta_classifier.guild_id is required when enabled");
+        if (!out.watched_channel_ids?.length) {
+            issues.push("beta_classifier.watched_channel_ids must not be empty when enabled");
+        }
+        if (!out.target_channel_id) issues.push("beta_classifier.target_channel_id is required when enabled");
+        if (!out.announcement_url) issues.push("beta_classifier.announcement_url is required when enabled");
+        if (!out.prompt_file) issues.push("beta_classifier.prompt_file is required when enabled");
+    }
+    return out;
+}
+
 function validateTwitter(input: JsonObject, issues: string[]): TwitterConfig {
     const out: TwitterConfig = {};
     assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "twitter.enabled", issues));
@@ -526,6 +655,10 @@ export function validateConfig(value: unknown): Config {
     if (moderation) out.moderation = validateModeration(moderation, issues);
     const autoResponder = optionalSection(value, "auto_responder", "auto_responder", issues);
     if (autoResponder) out.auto_responder = validateAutoResponder(autoResponder, issues);
+    const llmClassifier = optionalSection(value, "llm_classifier", "llm_classifier", issues);
+    if (llmClassifier) out.llm_classifier = validateLlmClassifier(llmClassifier, issues);
+    const betaClassifier = optionalSection(value, "beta_classifier", "beta_classifier", issues);
+    if (betaClassifier) out.beta_classifier = validateBetaClassifier(betaClassifier, issues);
     const twitter = optionalSection(value, "twitter", "twitter", issues);
     if (twitter) out.twitter = validateTwitter(twitter, issues);
     const proposals = optionalSection(value, "proposals", "proposals", issues);

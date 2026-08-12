@@ -5,7 +5,10 @@ import { handleModPing } from "../features/moderation/modPing";
 import { CrosspostHandler } from "../features/crosspost/crosspostHandler";
 import { ImageFingerprintHandler } from "../features/imageFingerprint/imageFingerprintHandler";
 import { AutoResponder } from "../features/autoresponder/autoResponder";
+import { BetaClassifier } from "../features/betaClassifier/betaClassifier";
 import { handleTwitterLinks } from "../features/twitter/twitterHandler";
+import { LlmClassifier } from "../llm/classifier";
+import { ClassificationLogger } from "../llm/classificationLogger";
 import { channelOrParentListed } from "../utils/channels";
 
 // Stateful handlers are built once; the registry is the single place to wire
@@ -13,12 +16,18 @@ import { channelOrParentListed } from "../utils/channels";
 let crosspost: CrosspostHandler | null = null;
 let imageFingerprint: ImageFingerprintHandler | null = null;
 let autoResponder: AutoResponder | null = null;
+let llmClassifier: LlmClassifier | null = null;
+let classificationLogger: ClassificationLogger | null = null;
+let betaClassifier: BetaClassifier | null = null;
 let features: Feature[] | null = null;
 
 function build(client: KrytenClient): void {
     crosspost = new CrosspostHandler(client);
     imageFingerprint = new ImageFingerprintHandler(client);
     autoResponder = new AutoResponder(client);
+    llmClassifier = new LlmClassifier(() => client.config.llm_classifier);
+    classificationLogger = new ClassificationLogger(client);
+    betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger);
 
     features = [
         {
@@ -35,6 +44,11 @@ function build(client: KrytenClient): void {
             name: "mod-ping",
             enabled: c => !!c.config.moderation?.mod_role_id,
             onMessage: (message, c) => handleModPing(message, c),
+        },
+        {
+            name: "beta-classifier",
+            enabled: c => (c.config.beta_classifier?.enabled ?? false) && (c.config.llm_classifier?.enabled ?? false),
+            onMessage: message => betaClassifier!.process(message),
         },
         {
             name: "auto-responder",
@@ -87,6 +101,21 @@ export function getImageFingerprintHandler(client: KrytenClient): ImageFingerpri
 export function getAutoResponder(client: KrytenClient): AutoResponder {
     ensure(client);
     return autoResponder!;
+}
+
+export function getLlmClassifier(client: KrytenClient): LlmClassifier {
+    ensure(client);
+    return llmClassifier!;
+}
+
+export function getClassificationLogger(client: KrytenClient): ClassificationLogger {
+    ensure(client);
+    return classificationLogger!;
+}
+
+export function getBetaClassifier(client: KrytenClient): BetaClassifier {
+    ensure(client);
+    return betaClassifier!;
 }
 
 /**
