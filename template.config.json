@@ -73,7 +73,7 @@
     "llm_classifier": {
         "enabled": false,
         "provider": "fireworks",
-        "model": "accounts/fireworks/models/deepseek-v4-flash-0731",
+        "model": "YOUR_FIREWORKS_MODEL_ID_HERE",
         "api_key_env": "FIREWORKS_API_KEY",
         "classification_log_channel_id": "YOUR_LLM_CLASSIFICATION_LOG_CHANNEL_ID_HERE",
         "timeout_ms": 30000,
