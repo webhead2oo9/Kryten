@@ -546,6 +546,27 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         "response_enabled",
         optionalBoolean(input, "response_enabled", "beta_classifier.response_enabled", issues),
     );
+    assignBoolean(
+        out,
+        "target_greeting_enabled",
+        optionalBoolean(input, "target_greeting_enabled", "beta_classifier.target_greeting_enabled", issues),
+    );
+    assignNumber(
+        out,
+        "target_greeting_delete_after_seconds",
+        optionalNumber(
+            input,
+            "target_greeting_delete_after_seconds",
+            "beta_classifier.target_greeting_delete_after_seconds",
+            issues,
+            { integer: true, min: 5, max: 3_600 },
+        ),
+    );
+    assignString(
+        out,
+        "announcements_channel_id",
+        optionalString(input, "announcements_channel_id", "beta_classifier.announcements_channel_id", issues),
+    );
     assignString(out, "guild_id", optionalString(input, "guild_id", "beta_classifier.guild_id", issues));
     if (input["watched_channel_ids"] !== undefined) {
         issues.push("beta_classifier.watched_channel_ids was removed; use included_channel_ids");
@@ -610,6 +631,20 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         if (!out.target_channel_id) issues.push("beta_classifier.target_channel_id is required when enabled");
         if (!out.announcement_url) issues.push("beta_classifier.announcement_url is required when enabled");
         if (!out.prompt_file) issues.push("beta_classifier.prompt_file is required when enabled");
+    }
+    if (out.target_greeting_enabled) {
+        if (!out.target_channel_id) {
+            issues.push("beta_classifier.target_channel_id is required when target greeting is enabled");
+        }
+        if (!out.announcements_channel_id) {
+            issues.push("beta_classifier.announcements_channel_id is required when target greeting is enabled");
+        }
+        if (!out.campaign_id) {
+            issues.push("beta_classifier.campaign_id is required when target greeting is enabled");
+        }
+        if (!out.campaign_started_at) {
+            issues.push("beta_classifier.campaign_started_at is required when target greeting is enabled");
+        }
     }
     return out;
 }

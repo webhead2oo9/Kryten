@@ -7,6 +7,7 @@ import type { KrytenClient } from "../src/classes/client";
 import { decryptJson, encryptJson, isEncryptedJsonEnvelope } from "../src/utils/encryptedJson";
 import {
     BETA_CLASSIFIER_ID,
+    BETA_GREETING_ID,
     CLASSIFIER_CAMPAIGN_RETENTION_MS,
     ClassifierCampaign,
     UserInteractionStore,
@@ -46,6 +47,14 @@ describe("UserInteractionStore", () => {
         const admission = await store.beginClassifierRun("42", campaign());
         if (admission.status !== "acquired") throw new Error("expected classifier admission");
         await store.completeClassifierRun(admission.run, campaign(), "ROUTE", 1_720_000_000);
+        const campaignGreeting = await store.getCampaignGreeting("42", BETA_GREETING_ID);
+        await store.setCampaignGreeting(
+            "42",
+            BETA_GREETING_ID,
+            { campaignId: "synthetic-beta" },
+            campaignGreeting.generation,
+        );
+        await store.flushNow();
 
         expect(readStore(storePath, key)).toEqual({
             "42": {
@@ -57,6 +66,9 @@ describe("UserInteractionStore", () => {
                         decision: "ROUTE",
                         classifiedAt: 1_720_000_000,
                     },
+                },
+                campaignGreetings: {
+                    beta: { campaignId: "synthetic-beta" },
                 },
             },
         });
@@ -116,6 +128,13 @@ describe("UserInteractionStore", () => {
         const admission = await store.beginClassifierRun("42", campaign());
         if (admission.status !== "acquired") throw new Error("expected classifier admission");
         await store.completeClassifierRun(admission.run, campaign(), "ROUTE", 1_720_000_000);
+        const campaignGreeting = await store.getCampaignGreeting("42", BETA_GREETING_ID);
+        await store.setCampaignGreeting(
+            "42",
+            BETA_GREETING_ID,
+            { campaignId: "synthetic-beta" },
+            campaignGreeting.generation,
+        );
 
         testClient.config.beta_classifier = {
             ...testClient.config.beta_classifier,
@@ -141,6 +160,9 @@ describe("UserInteractionStore", () => {
                                 decision: "ROUTE",
                                 classifiedAt: 1_720_000_000,
                             },
+                        },
+                        campaignGreetings: {
+                            beta: { campaignId: "synthetic-beta" },
                         },
                     },
                 },
@@ -172,6 +194,9 @@ describe("UserInteractionStore", () => {
                                 decision: "ROUTE",
                                 classifiedAt: 1_720_000_000,
                             },
+                        },
+                        campaignGreetings: {
+                            beta: { campaignId: "synthetic-beta" },
                         },
                     },
                 },
@@ -237,6 +262,13 @@ describe("UserInteractionStore", () => {
         await store.flushNow();
         const admission = await store.beginClassifierRun("42", campaign());
         if (admission.status !== "acquired") throw new Error("expected classifier admission");
+        const campaignGreeting = await store.getCampaignGreeting("42", BETA_GREETING_ID);
+        await store.setCampaignGreeting(
+            "42",
+            BETA_GREETING_ID,
+            { campaignId: "synthetic-beta" },
+            campaignGreeting.generation,
+        );
 
         await expect(store.deleteUser("42")).resolves.toBe(true);
         await expect(store.completeClassifierRun(admission.run, campaign(), "ROUTE", 1_720_000_000)).resolves.toBe(
@@ -247,6 +279,14 @@ describe("UserInteractionStore", () => {
                 "42",
                 { firstMessageTimestamp: 1_710_000_000, greetedInRandom: true },
                 snapshot.generation,
+            ),
+        ).resolves.toBe(false);
+        await expect(
+            store.setCampaignGreeting(
+                "42",
+                BETA_GREETING_ID,
+                { campaignId: "synthetic-beta" },
+                campaignGreeting.generation,
             ),
         ).resolves.toBe(false);
         expect(readStore(storePath, key)).toEqual({});

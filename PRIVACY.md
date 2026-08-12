@@ -18,11 +18,22 @@ Kryten keeps one AES-256-GCM-encrypted interaction record per relevant Discord u
 
 - the Discord user ID, first-seen time, and newcomer-greeting state;
 - per-classifier campaign ID, `ROUTE` or `IGNORE` decision, and classification time.
+- the current beta campaign ID when the beta-testing greeting has already been
+  shown or suppressed by an operator backfill.
 
-Classifier records do not contain message text, prompts, model output, reasoning, usernames, or conversation history. Beta-classifier records are deleted when the configured beta campaign changes or 30 days after that campaign starts, whichever happens first. Never-greeted newcomer records expire after 30 days; greeted records remain so Kryten does not repeatedly welcome established members.
+Classifier and beta-greeting records do not contain message text, prompts,
+model output, reasoning, usernames, or conversation history. Beta-classifier
+and beta-greeting records are deleted when the configured beta campaign changes
+or 30 days after that campaign starts, whichever happens first. Never-greeted
+newcomer records expire after 30 days; greeted records remain so Kryten does not
+repeatedly welcome established members.
 
 Staff classification logs contain the decision, processing status, and a link to the original Discord message. They do not copy the message text or username. Provider failure details are bounded and redacted before logging.
 
 ## Deletion and contact
 
-Use `/delete-data` in the Discord server to delete your complete encrypted Kryten interaction record. Future qualifying activity can create a new record, and deleting newcomer state may cause the greeter to welcome you again. You may also privately contact the server moderation team through the server's established staff-contact method for privacy questions or deletion assistance.
+Use `/delete-data` in the Discord server to delete your complete encrypted
+Kryten interaction record. Future qualifying activity can create a new record,
+and deleting greeting state may cause Kryten to greet you again. You may also
+privately contact the server moderation team through the server's established
+staff-contact method for privacy questions or deletion assistance.

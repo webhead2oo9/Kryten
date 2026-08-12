@@ -6,6 +6,7 @@ import { CrosspostHandler } from "../features/crosspost/crosspostHandler";
 import { ImageFingerprintHandler } from "../features/imageFingerprint/imageFingerprintHandler";
 import { AutoResponder } from "../features/autoresponder/autoResponder";
 import { BetaClassifier } from "../features/betaClassifier/betaClassifier";
+import { BetaResponder } from "../features/betaResponder/betaResponder";
 import { handleTwitterLinks } from "../features/twitter/twitterHandler";
 import { LlmClassifier } from "../llm/classifier";
 import { ClassificationLogger } from "../llm/classificationLogger";
@@ -20,6 +21,7 @@ let autoResponder: AutoResponder | null = null;
 let llmClassifier: LlmClassifier | null = null;
 let classificationLogger: ClassificationLogger | null = null;
 let betaClassifier: BetaClassifier | null = null;
+let betaResponder: BetaResponder | null = null;
 let userInteractions: UserInteractionStore | null = null;
 let features: Feature[] | null = null;
 
@@ -31,6 +33,7 @@ function build(client: KrytenClient): void {
     llmClassifier = new LlmClassifier(() => client.config.llm_classifier);
     classificationLogger = new ClassificationLogger(client);
     betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger, userInteractions);
+    betaResponder = new BetaResponder(client, userInteractions);
 
     features = [
         {
@@ -52,6 +55,11 @@ function build(client: KrytenClient): void {
             name: "beta-classifier",
             enabled: c => (c.config.beta_classifier?.enabled ?? false) && (c.config.llm_classifier?.enabled ?? false),
             onMessage: message => betaClassifier!.process(message),
+        },
+        {
+            name: "beta-responder",
+            enabled: c => c.config.beta_classifier?.target_greeting_enabled ?? false,
+            onMessage: message => betaResponder!.process(message),
         },
         {
             name: "auto-responder",

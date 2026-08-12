@@ -14,6 +14,7 @@ const H = vi.hoisted(() => ({
     crosspostDelete: vi.fn(),
     autoProcess: vi.fn(),
     betaProcess: vi.fn(),
+    betaRespond: vi.fn(),
     modPing: vi.fn(),
     twitter: vi.fn(),
 }));
@@ -44,6 +45,11 @@ vi.mock("../src/features/betaClassifier/betaClassifier", () => ({
         process = H.betaProcess;
     },
 }));
+vi.mock("../src/features/betaResponder/betaResponder", () => ({
+    BetaResponder: class {
+        process = H.betaRespond;
+    },
+}));
 vi.mock("../src/features/moderation/modPing", () => ({
     handleModPing: H.modPing,
 }));
@@ -51,7 +57,15 @@ vi.mock("../src/features/twitter/twitterHandler", () => ({
     handleTwitterLinks: H.twitter,
 }));
 
-const onMessageSpies = [H.imageProcess, H.modPing, H.betaProcess, H.autoProcess, H.crosspostCheck, H.twitter];
+const onMessageSpies = [
+    H.imageProcess,
+    H.modPing,
+    H.betaProcess,
+    H.betaRespond,
+    H.autoProcess,
+    H.crosspostCheck,
+    H.twitter,
+];
 
 function fullConfig() {
     return {
@@ -66,6 +80,8 @@ function fullConfig() {
         beta_classifier: {
             enabled: true,
             response_enabled: false,
+            target_greeting_enabled: true,
+            announcements_channel_id: "announcements-1",
             guild_id: "guild-1",
             campaign_id: "synthetic-beta",
             campaign_started_at: new Date(Date.now() - 1_000).toISOString(),
@@ -167,6 +183,7 @@ describe("handleMessage pipeline semantics", () => {
         expect(H.imageProcess).toHaveBeenCalledTimes(1);
         expect(H.modPing).not.toHaveBeenCalled();
         expect(H.betaProcess).not.toHaveBeenCalled();
+        expect(H.betaRespond).not.toHaveBeenCalled();
         expect(H.autoProcess).not.toHaveBeenCalled();
         expect(H.crosspostCheck).not.toHaveBeenCalled();
         expect(H.twitter).not.toHaveBeenCalled();
@@ -202,6 +219,7 @@ describe("handleMessage pipeline semantics", () => {
         expect(H.imageProcess).not.toHaveBeenCalled();
         expect(H.modPing).toHaveBeenCalledTimes(1);
         expect(H.betaProcess).toHaveBeenCalledTimes(1);
+        expect(H.betaRespond).toHaveBeenCalledTimes(1);
         expect(H.autoProcess).toHaveBeenCalledTimes(1);
         expect(H.crosspostCheck).toHaveBeenCalledTimes(1);
         expect(H.twitter).toHaveBeenCalledTimes(1);
