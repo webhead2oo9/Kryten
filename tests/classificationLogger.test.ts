@@ -57,6 +57,7 @@ describe("ClassificationLogger", () => {
     it("includes bounded raw output only for provider failures", async () => {
         const { client, message, send } = setup();
         const logger = new ClassificationLogger(client);
+        const fireworksToken = `fw_${"a".repeat(26)}`;
 
         await logger.log(
             message,
@@ -68,14 +69,22 @@ describe("ClassificationLogger", () => {
                     code: "rate_limited",
                     summary: "Rate limited",
                     httpStatus: 429,
-                    rawOutput: '{"error":"capacity"}',
+                    rawOutput: JSON.stringify({
+                        error: "capacity",
+                        email: "me@example.com",
+                        token: fireworksToken,
+                    }),
                 },
             }),
         );
 
         const fields = send.mock.calls[0]![0].embeds[0].toJSON().fields;
         expect(fields).toContainEqual({ name: "Status", value: "Rate limited (429)", inline: true });
-        expect(fields).toContainEqual({ name: "Raw output", value: '```\n{"error":"capacity"}\n```' });
+        const raw = fields.find((field: { name: string }) => field.name === "Raw output")?.value;
+        expect(raw).toContain("[email omitted]");
+        expect(raw).toContain("[secret omitted]");
+        expect(raw).not.toContain("me@example.com");
+        expect(raw).not.toContain(fireworksToken);
     });
 
     it("does nothing when no channel is configured or authorization is revoked", async () => {

@@ -172,6 +172,22 @@ function optionalUrl(parent: JsonObject, key: string, path: string, issues: stri
     }
 }
 
+function optionalIsoTimestamp(parent: JsonObject, key: string, path: string, issues: string[]): string | undefined {
+    const value = optionalString(parent, key, path, issues);
+    if (value === undefined) return undefined;
+    const timestamp = Date.parse(value);
+    const normalized = value.endsWith("Z") && !value.includes(".") ? value.replace(/Z$/u, ".000Z") : value;
+    if (
+        !Number.isFinite(timestamp) ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/u.test(value) ||
+        new Date(timestamp).toISOString() !== normalized
+    ) {
+        issues.push(`${path} must be an ISO-8601 UTC timestamp such as 2026-08-05T16:01:00Z`);
+        return undefined;
+    }
+    return value;
+}
+
 function optionalHost(parent: JsonObject, key: string, path: string, issues: string[]): string | undefined {
     const value = optionalString(parent, key, path, issues);
     if (value === undefined) return undefined;
@@ -531,10 +547,29 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         optionalBoolean(input, "response_enabled", "beta_classifier.response_enabled", issues),
     );
     assignString(out, "guild_id", optionalString(input, "guild_id", "beta_classifier.guild_id", issues));
+    if (input["watched_channel_ids"] !== undefined) {
+        issues.push("beta_classifier.watched_channel_ids was removed; use included_channel_ids");
+    }
     assignStringArray(
         out,
-        "watched_channel_ids",
-        optionalStringArray(input, "watched_channel_ids", "beta_classifier.watched_channel_ids", issues),
+        "included_channel_ids",
+        optionalStringArray(input, "included_channel_ids", "beta_classifier.included_channel_ids", issues),
+    );
+    assignStringArray(
+        out,
+        "excluded_role_ids",
+        optionalStringArray(input, "excluded_role_ids", "beta_classifier.excluded_role_ids", issues),
+    );
+    const campaignId = optionalString(input, "campaign_id", "beta_classifier.campaign_id", issues);
+    if (campaignId && !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(campaignId)) {
+        issues.push("beta_classifier.campaign_id must be 1-64 letters, numbers, dots, underscores, or hyphens");
+    } else if (campaignId) {
+        out.campaign_id = campaignId;
+    }
+    assignString(
+        out,
+        "campaign_started_at",
+        optionalIsoTimestamp(input, "campaign_started_at", "beta_classifier.campaign_started_at", issues),
     );
     assignString(
         out,
@@ -567,9 +602,11 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
     );
     if (out.enabled) {
         if (!out.guild_id) issues.push("beta_classifier.guild_id is required when enabled");
-        if (!out.watched_channel_ids?.length) {
-            issues.push("beta_classifier.watched_channel_ids must not be empty when enabled");
+        if (!out.included_channel_ids?.length) {
+            issues.push("beta_classifier.included_channel_ids must not be empty when enabled");
         }
+        if (!out.campaign_id) issues.push("beta_classifier.campaign_id is required when enabled");
+        if (!out.campaign_started_at) issues.push("beta_classifier.campaign_started_at is required when enabled");
         if (!out.target_channel_id) issues.push("beta_classifier.target_channel_id is required when enabled");
         if (!out.announcement_url) issues.push("beta_classifier.announcement_url is required when enabled");
         if (!out.prompt_file) issues.push("beta_classifier.prompt_file is required when enabled");

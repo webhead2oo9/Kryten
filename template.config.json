@@ -91,9 +91,12 @@
         "enabled": false,
         "response_enabled": false,
         "guild_id": "YOUR_GUILD_ID_HERE",
-        "watched_channel_ids": [
+        "campaign_id": "YOUR_CAMPAIGN_ID_HERE",
+        "campaign_started_at": "2026-01-01T00:00:00.000Z",
+        "included_channel_ids": [
             "YOUR_SUPPORT_CHANNEL_ID_HERE"
         ],
+        "excluded_role_ids": [],
         "target_channel_id": "YOUR_BETA_CHANNEL_ID_HERE",
         "announcement_url": "https://discord.com/channels/YOUR_GUILD_ID/YOUR_CHANNEL_ID/YOUR_MESSAGE_ID",
         "prompt_file": "YOUR_PRIVATE_BETA_CLASSIFIER_PROMPT_FILE_HERE",

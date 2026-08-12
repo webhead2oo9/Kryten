@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-    buildClassificationTranscript,
-    sanitizeMessageText,
-    TranscriptMessage,
-} from "../src/features/betaClassifier/context";
+import { buildClassificationTranscript, TranscriptMessage } from "../src/features/betaClassifier/context";
+import { sanitizeSensitiveText } from "../src/llm/privacy";
 
 function message(
     id: string,
@@ -85,9 +82,9 @@ describe("buildClassificationTranscript", () => {
     });
 });
 
-describe("sanitizeMessageText", () => {
+describe("sanitizeSensitiveText", () => {
     it("removes Discord identifiers, raw links, and snowflake-shaped text", () => {
-        const sanitized = sanitizeMessageText(
+        const sanitized = sanitizeSensitiveText(
             "<@123456789012345678> see <#223456789012345678> and <#623456789012345678> " +
                 "<@&323456789012345678> <:wave:423456789012345678> " +
                 "https://example.test/private 523456789012345678",
@@ -96,5 +93,45 @@ describe("sanitizeMessageText", () => {
 
         expect(sanitized).toBe("@member see #beta-testing and #channel @role :wave: [link omitted] [id omitted]");
         expect(sanitized).not.toMatch(/\d{17,20}/);
+    });
+
+    it("redacts contact details, network identifiers, and common secret formats", () => {
+        const fireworksToken = `fw_${"a".repeat(26)}`;
+        const bearerToken = "b".repeat(32);
+        const sanitized = sanitizeSensitiveText(
+            `email me@example.com call +1 (415) 555-0123 host 192.168.1.20 and ::1 ` +
+                `or 2001:db8::1 mac aa:bb:cc:dd:ee:ff token=super-secret-value ${fireworksToken} ` +
+                `Authorization: Bearer ${bearerToken}`,
+        );
+
+        expect(sanitized).toContain("[email omitted]");
+        expect(sanitized).toContain("[phone number omitted]");
+        expect(sanitized).toContain("[IP address omitted]");
+        expect(sanitized).toContain("[MAC address omitted]");
+        expect(sanitized).not.toContain("super-secret-value");
+        expect(sanitized).not.toContain(fireworksToken);
+        expect(sanitized).not.toContain(bearerToken);
+        expect(sanitized).not.toContain("::1");
+        expect(sanitized).not.toContain("2001:db8::1");
+    });
+
+    it("keeps beta versions and ordinary USB troubleshooting numbers", () => {
+        expect(sanitizeSensitiveText("Quest 1.34.19 drops every 12 minutes on USB 3.0")).toBe(
+            "Quest 1.34.19 drops every 12 minutes on USB 3.0",
+        );
+    });
+
+    it("redacts complete authorization headers and quoted secret values", () => {
+        const basicCredential = Buffer.from("synthetic-user:synthetic-password").toString("base64");
+        const sanitized = sanitizeSensitiveText(
+            `Authorization: Basic ${basicCredential}\n` +
+                `Proxy-Authorization: Basic ${basicCredential}\n` +
+                "token=\"multiple synthetic words\" password='another secret value'",
+        );
+
+        expect(sanitized).not.toContain(basicCredential);
+        expect(sanitized).not.toContain("multiple synthetic words");
+        expect(sanitized).not.toContain("another secret value");
+        expect(sanitized.match(/\[secret omitted\]/g)).toHaveLength(4);
     });
 });
