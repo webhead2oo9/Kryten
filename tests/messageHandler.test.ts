@@ -13,6 +13,7 @@ const H = vi.hoisted(() => ({
     crosspostCheck: vi.fn(),
     crosspostDelete: vi.fn(),
     autoProcess: vi.fn(),
+    betaProcess: vi.fn(),
     modPing: vi.fn(),
     twitter: vi.fn(),
 }));
@@ -33,6 +34,11 @@ vi.mock("../src/features/autoresponder/autoResponder", () => ({
         process = H.autoProcess;
     },
 }));
+vi.mock("../src/features/betaClassifier/betaClassifier", () => ({
+    BetaClassifier: class {
+        process = H.betaProcess;
+    },
+}));
 vi.mock("../src/features/moderation/modPing", () => ({
     handleModPing: H.modPing,
 }));
@@ -40,10 +46,8 @@ vi.mock("../src/features/twitter/twitterHandler", () => ({
     handleTwitterLinks: H.twitter,
 }));
 
-/** Every onMessage spy in registry order (image → mod-ping → auto → crosspost → twitter). */
-const onMessageSpies = [H.imageProcess, H.modPing, H.autoProcess, H.crosspostCheck, H.twitter];
+const onMessageSpies = [H.imageProcess, H.modPing, H.betaProcess, H.autoProcess, H.crosspostCheck, H.twitter];
 
-/** Config that enables all five features (crosspost defaults enabled anyway). */
 function fullConfig() {
     return {
         moderation: {
@@ -53,6 +57,16 @@ function fullConfig() {
             channel_blacklist: [] as string[],
         },
         auto_responder: { random_greeting_channel_id: "greet-1" },
+        llm_classifier: { enabled: true, provider: "fireworks" as const, model: "example" },
+        beta_classifier: {
+            enabled: true,
+            response_enabled: false,
+            guild_id: "guild-1",
+            watched_channel_ids: ["chan-1"],
+            target_channel_id: "beta-1",
+            announcement_url: "https://discord.com/channels/guild/channel/message",
+            prompt_file: "/private/beta-prompt.json",
+        },
         twitter: { enabled: true },
     };
 }
@@ -131,10 +145,6 @@ describe("handleMessage pipeline semantics", () => {
         await handleMessage(makeMessage(), client);
 
         for (const spy of onMessageSpies) expect(spy).toHaveBeenCalledTimes(1);
-        // invocationCallOrder is a process-global monotonic counter, so a
-        // strictly increasing sequence of each spy's first call proves the
-        // pipeline dispatched features in registry order (image → mod-ping →
-        // auto → crosspost → twitter), not merely that each ran once.
         const callOrder = onMessageSpies.map(spy => spy.mock.invocationCallOrder[0]!);
         for (let i = 1; i < callOrder.length; i++) {
             expect(callOrder[i]!).toBeGreaterThan(callOrder[i - 1]!);
@@ -149,6 +159,7 @@ describe("handleMessage pipeline semantics", () => {
 
         expect(H.imageProcess).toHaveBeenCalledTimes(1);
         expect(H.modPing).not.toHaveBeenCalled();
+        expect(H.betaProcess).not.toHaveBeenCalled();
         expect(H.autoProcess).not.toHaveBeenCalled();
         expect(H.crosspostCheck).not.toHaveBeenCalled();
         expect(H.twitter).not.toHaveBeenCalled();
@@ -186,6 +197,7 @@ describe("handleMessage pipeline semantics", () => {
 
         expect(H.imageProcess).not.toHaveBeenCalled();
         expect(H.modPing).toHaveBeenCalledTimes(1);
+        expect(H.betaProcess).toHaveBeenCalledTimes(1);
         expect(H.autoProcess).toHaveBeenCalledTimes(1);
         expect(H.crosspostCheck).toHaveBeenCalledTimes(1);
         expect(H.twitter).toHaveBeenCalledTimes(1);
