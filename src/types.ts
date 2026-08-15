@@ -1,10 +1,10 @@
-import {
+import type {
     ChatInputCommandInteraction,
     Interaction,
     RESTPostAPIChatInputApplicationCommandsJSONBody,
     RESTPostAPIContextMenuApplicationCommandsJSONBody,
 } from "discord.js";
-import { KrytenClient } from "./classes/client";
+import type { KrytenClient } from "./classes/client";
 
 export enum StoreTypes {
     COMMANDS,

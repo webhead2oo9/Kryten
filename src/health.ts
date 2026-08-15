@@ -1,4 +1,5 @@
 import { createServer, Server } from "http";
+import { Status } from "discord.js";
 import { KrytenClient } from "./classes/client";
 import {
     getBetaClassifier,
@@ -22,9 +23,9 @@ export function startHealthServer(client: KrytenClient, port: number): Server {
             ) {
                 handleCommandRead(client, req, res, url);
             } else if (req.method === "GET" && url.pathname === "/health") {
-                const discordConnected = client.ws.status === 0;
+                const discordConnected = client.ws.status === Status.Ready;
 
-                const connections: Record<string, object> = {
+                const connections: Record<string, { status: string; latency?: number; error?: string }> = {
                     discord: {
                         status: discordConnected ? "connected" : "disconnected",
                         ...(discordConnected
@@ -33,8 +34,9 @@ export function startHealthServer(client: KrytenClient, port: number): Server {
                     },
                 };
 
-                const hasDisconnect = Object.values(connections).some((c: any) => c.status === "disconnected");
+                const hasDisconnect = Object.values(connections).some(c => c.status === "disconnected");
 
+                const imageFingerprint = getImageFingerprintHandler(client);
                 const body = JSON.stringify({
                     name: client.name,
                     status: hasDisconnect ? "unhealthy" : "healthy",
@@ -48,9 +50,9 @@ export function startHealthServer(client: KrytenClient, port: number): Server {
                         customCommands: client.custom_commands.length,
                         crosspost: getCrosspostHandler(client).getMetrics(),
                         imageFingerprint: {
-                            ...getImageFingerprintHandler(client).getMetrics(),
-                            corpusSize: getImageFingerprintHandler(client).store.size,
-                            hubActive: getImageFingerprintHandler(client).store.hubActive,
+                            ...imageFingerprint.getMetrics(),
+                            corpusSize: imageFingerprint.store.size,
+                            hubActive: imageFingerprint.store.hubActive,
                         },
                         llmClassifier: getLlmClassifier(client).getMetrics(),
                         classificationLogger: getClassificationLogger(client).getMetrics(),
