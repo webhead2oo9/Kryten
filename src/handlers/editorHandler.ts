@@ -24,7 +24,7 @@ import { EditorSection, EditorSession } from "../classes/customCommandEditor";
 import { KrytenClient } from "../classes/client";
 import { CV2_TEXT_BUDGET, RenderUnit, blockText, blocksToContainer, unitContainers } from "../utils/commandRender";
 import { CV2_COMPONENT_BUDGET, CV2_MEDIA_GALLERY_ITEM_BUDGET, messageComponentCount } from "../utils/cv2";
-import { clampCommitMessage, sanitizeCommitAuthor } from "../github/contentsApi";
+import { clampCommitMessage, sanitizeCommitAuthor } from "../github/commandFiles";
 import { deepEqual } from "../utils/deepEqual";
 import { jsonClone } from "../utils/jsonClone";
 import {

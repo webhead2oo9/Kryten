@@ -175,9 +175,25 @@ export class CommandFilesClient {
     async fetchRemoteDigest(): Promise<string | null> {
         const listing = await this.listCommandDir();
         if ("error" in listing) {
-            console.error(`GitHub command ${listing.error}`);
+            console.error(listing.error);
             return null;
         }
         return computeDirectoryDigest(listing.entries);
     }
+}
+
+/** Neutralize user-controlled text destined for a commit author label. */
+export function sanitizeCommitAuthor(authorLabel: string): string {
+    const fallback = "unknown";
+    if (!authorLabel) return fallback;
+    const cleaned = authorLabel
+        .replace(/[\r\n]+/g, " ")
+        .replace(/\s+/g, " ")
+        .replace(/[^\p{L}\p{N}\s._-]/gu, "")
+        .trim();
+    return cleaned.length ? cleaned.slice(0, 40) : fallback;
+}
+
+export function clampCommitMessage(message: string): string {
+    return message.length > 80 ? `${message.slice(0, 77)}...` : message;
 }

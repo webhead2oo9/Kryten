@@ -5,7 +5,8 @@
  * re-applies the change against the live GitHub file and commits it.
  */
 import type { KrytenClient } from "../classes/client";
-import { WriteResult, clampCommitMessage, sanitizeCommitAuthor } from "../github/contentsApi";
+import type { WriteResult } from "../github/contentsApi";
+import { clampCommitMessage, sanitizeCommitAuthor } from "../github/commandFiles";
 import { CustomCommand } from "../types";
 import { NAME_PATTERN, normalizeName } from "../utils/format";
 import { jsonClone } from "../utils/jsonClone";

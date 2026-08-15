@@ -12,16 +12,11 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
 import { Commands, Config, CustomCommand } from "../types";
 import { normalizeName } from "../utils/format";
+import { jsonClone } from "../utils/jsonClone";
 import { validateCustomCommand } from "../utils/validateCommand";
 import { CommandFilesClient, computeDirectoryDigest } from "./commandFiles";
 
 export type LoadSource = "github" | "cache" | "memory" | "none";
-
-type LoadedCache = {
-    commands: Commands;
-    digest?: string;
-    files?: Record<string, { path: string; sha: string }>;
-};
 
 /** The slice of KrytenClient that CommandSync actually uses (test seam). */
 export interface CommandSyncHost {
@@ -44,9 +39,7 @@ interface CacheFileV2 {
     commands: Commands;
 }
 
-function jsonCloneRecord(value: Record<string, unknown>): Record<string, unknown> {
-    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
-}
+type LoadedCache = Omit<CacheFileV2, "version" | "timestamp">;
 
 // GitHub advises serial requests per token and enforces secondary rate limits on
 // bursts; a large corpus firing N simultaneous GETs can trip a 403 that fails the
@@ -127,7 +120,7 @@ export class CommandSync {
         // reference into live/mutable state. rawBodies is contractually the
         // exact parsed GitHub body — served by the read API and edited by the
         // patch engine — so it must never alias an object a later edit mutates.
-        this.rawBodies.set(key, jsonCloneRecord(rawBody));
+        this.rawBodies.set(key, jsonClone(rawBody));
         const client = this.filesClient();
         if (client && !this.filePaths.has(key)) {
             try {
@@ -153,7 +146,7 @@ export class CommandSync {
         if (!client) return;
         const listing = await client.listCommandDir();
         if ("error" in listing) {
-            console.error(`GitHub command ${listing.error}`);
+            console.error(listing.error);
             return;
         }
 
@@ -287,7 +280,7 @@ export class CommandSync {
                 continue;
             }
             const raw = result.raw;
-            const command = jsonCloneRecord(raw) as unknown as CustomCommand;
+            const command = jsonClone(raw) as unknown as CustomCommand;
             if (!validateCustomCommand(command)) {
                 invalidPaths.push(result.path);
                 continue;
@@ -353,7 +346,6 @@ export class CommandSync {
         const cached = alreadyLoadedCache === undefined ? this.loadCache() : alreadyLoadedCache;
         if (cached && cached.commands.length > 0) {
             console.log(`Using snapshot as fallback (${reason})`);
-            this.digest = undefined;
             this.fileShas.clear();
             this.filePaths.clear();
             this.rawBodies.clear();

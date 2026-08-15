@@ -34,6 +34,11 @@ export type WriteResult =
     | { status: "timeout" }
     | { status: "error"; message: string };
 
+function mapWriteError(error: unknown): WriteResult {
+    if (error instanceof Error && error.name === "TimeoutError") return { status: "timeout" };
+    return { status: "error", message: error instanceof Error ? error.message : String(error) };
+}
+
 function pat(): string | undefined {
     return process.env["GITHUB_PAT"];
 }
@@ -148,8 +153,7 @@ export async function putFile(
         const errBody = await response.text().catch(() => "");
         return { status: "error", message: `${response.status} ${response.statusText} ${errBody.slice(0, 300)}` };
     } catch (error) {
-        if (error instanceof Error && error.name === "TimeoutError") return { status: "timeout" };
-        return { status: "error", message: error instanceof Error ? error.message : String(error) };
+        return mapWriteError(error);
     }
 }
 
@@ -169,27 +173,12 @@ export async function deleteFile(ref: RepoRef, path: string, message: string, sh
         if (response.status === 404) return { status: "ok" };
         const errBody = await response.text().catch(() => "");
         if (response.status === 409 || (response.status === 422 && /sha/i.test(errBody))) {
+            // Logged like putFile's precondition failure so delete-side conflicts reach the logs too.
+            console.error(`GitHub deleteFile precondition failure ${response.status}: ${errBody.slice(0, 200)}`);
             return { status: "sha_conflict" };
         }
         return { status: "error", message: `${response.status} ${response.statusText} ${errBody.slice(0, 300)}` };
     } catch (error) {
-        if (error instanceof Error && error.name === "TimeoutError") return { status: "timeout" };
-        return { status: "error", message: error instanceof Error ? error.message : String(error) };
+        return mapWriteError(error);
     }
-}
-
-/** Neutralize user-controlled text destined for a commit author label. */
-export function sanitizeCommitAuthor(authorLabel: string): string {
-    const fallback = "unknown";
-    if (!authorLabel) return fallback;
-    const cleaned = authorLabel
-        .replace(/[\r\n]+/g, " ")
-        .replace(/\s+/g, " ")
-        .replace(/[^\p{L}\p{N}\s._-]/gu, "")
-        .trim();
-    return cleaned.length ? cleaned.slice(0, 40) : fallback;
-}
-
-export function clampCommitMessage(message: string): string {
-    return message.length > 80 ? `${message.slice(0, 77)}...` : message;
 }

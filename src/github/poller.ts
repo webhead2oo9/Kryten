@@ -78,7 +78,7 @@ export class CommandPoller {
         }
     }
 
-    /** One poll cycle; safe to call directly (used by /reload-adjacent flows and tests). */
+    /** One poll cycle; safe to call directly (used by tests). */
     async checkNow(): Promise<void> {
         if (this.checking) return;
         this.checking = true;

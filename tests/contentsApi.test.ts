@@ -1,13 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-    clampCommitMessage,
-    deleteFile,
-    getContents,
-    githubContentsUrl,
-    putFile,
-    RepoRef,
-    sanitizeCommitAuthor,
-} from "../src/github/contentsApi";
+import { clampCommitMessage, sanitizeCommitAuthor } from "../src/github/commandFiles";
+import { deleteFile, getContents, githubContentsUrl, putFile, RepoRef } from "../src/github/contentsApi";
 
 const REF: RepoRef = { owner: "webhead", repo: "Commands", branch: "main" };
 const PAT = "test-pat-abc123";
@@ -17,7 +10,7 @@ let savedPat: string | undefined;
 beforeEach(() => {
     savedPat = process.env["GITHUB_PAT"];
     process.env["GITHUB_PAT"] = PAT;
-    // putFile logs to console.error on a precondition failure — keep the suite quiet.
+    // putFile/deleteFile log to console.error on a precondition failure — keep the suite quiet.
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
@@ -42,10 +35,12 @@ function timeoutError(): Error {
 
 describe("githubContentsUrl", () => {
     it("percent-encodes owner, repo, branch, and each path segment while slashes survive", () => {
-        const url = githubContentsUrl({ owner: "web head", repo: "re#po", branch: "ma?in" }, "commands/na me.json", true);
-        expect(url).toBe(
-            "https://api.github.com/repos/web%20head/re%23po/contents/commands/na%20me.json?ref=ma%3Fin",
+        const url = githubContentsUrl(
+            { owner: "web head", repo: "re#po", branch: "ma?in" },
+            "commands/na me.json",
+            true,
         );
+        expect(url).toBe("https://api.github.com/repos/web%20head/re%23po/contents/commands/na%20me.json?ref=ma%3Fin");
     });
 
     it("omits the ?ref= query when includeRef is false", () => {
@@ -137,8 +132,8 @@ describe("getContents", () => {
     });
 
     it("does not throw on non-base64 content — Node decodes it leniently", async () => {
-        stubFetch(async () =>
-            new Response(JSON.stringify({ content: "!!!!not base64!!!!", sha: "abc" }), { status: 200 }),
+        stubFetch(
+            async () => new Response(JSON.stringify({ content: "!!!!not base64!!!!", sha: "abc" }), { status: 200 }),
         );
         expect((await getContents(REF, "commands/wifi.json")).kind).toBe("file");
     });
@@ -229,8 +224,8 @@ describe("putFile", () => {
     });
 
     it("includes the sha in the payload when provided and base64-encodes the content", async () => {
-        const fetchMock = stubFetch(async () =>
-            new Response(JSON.stringify({ content: { sha: "s" } }), { status: 200 }),
+        const fetchMock = stubFetch(
+            async () => new Response(JSON.stringify({ content: { sha: "s" } }), { status: 200 }),
         );
         await putFile(REF, "commands/wifi.json", "file content", "commit msg", "old-sha");
         const [url, options] = fetchMock.mock.calls[0];
@@ -245,8 +240,8 @@ describe("putFile", () => {
     });
 
     it("omits sha from the payload for create-new semantics", async () => {
-        const fetchMock = stubFetch(async () =>
-            new Response(JSON.stringify({ content: { sha: "s" } }), { status: 201 }),
+        const fetchMock = stubFetch(
+            async () => new Response(JSON.stringify({ content: { sha: "s" } }), { status: 201 }),
         );
         await putFile(REF, "commands/wifi.json", "body", "msg");
         const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
