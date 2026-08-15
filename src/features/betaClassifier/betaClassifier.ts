@@ -86,7 +86,13 @@ export class BetaClassifier {
             this.metrics.candidates++;
 
             const campaign = this.campaign(config!);
-            const admission = await this.interactions.beginClassifierRun(message.author.id, campaign);
+            if (!campaign) return; // isEligible() already ruled this out
+            // A store failure is a persistence problem, not an LLM provider fallback.
+            const admission = await this.interactions.beginClassifierRun(message.author.id, campaign).catch(() => null);
+            if (admission === null) {
+                this.metrics.persistenceFailures++;
+                return;
+            }
             if (admission.status !== "acquired") {
                 if (admission.status === "already_routed") this.metrics.alreadyRouted++;
                 else if (admission.status === "busy") this.metrics.duplicateInFlight++;
@@ -134,7 +140,8 @@ export class BetaClassifier {
         if (channelOrParentListed(message.channel, message.channelId, [config.target_channel_id ?? ""])) return false;
         if (memberHasStaffRole(message.member, this.client.config)) return false;
         if (memberHasAnyRole(message.member, config.excluded_role_ids ?? [])) return false;
-        if (!classifierCampaignIsActive(this.campaign(config))) return false;
+        const campaign = this.campaign(config);
+        if (!campaign || !classifierCampaignIsActive(campaign)) return false;
         return true;
     }
 
@@ -210,7 +217,9 @@ export class BetaClassifier {
                         .catch(() => undefined);
                 }
             } else {
-                await this.interactions.releaseClassifierRun(run);
+                // A failed release is not retried immediately: the finally below would
+                // fire the same wedged store op again in the same tick.
+                await this.interactions.releaseClassifierRun(run).catch(() => void this.metrics.persistenceFailures++);
                 released = true;
             }
             await this.classificationLogger.log(message, result, isAuthorized);
@@ -257,11 +266,12 @@ export class BetaClassifier {
         return this.isAuthorized(message, betaConfig, llmConfig) && this.interactions.isClassifierRunCurrent(run);
     }
 
-    private campaign(config: BetaClassifierConfig): ClassifierCampaign {
+    private campaign(config: BetaClassifierConfig): ClassifierCampaign | null {
+        if (!config.campaign_id || !config.campaign_started_at) return null;
         return {
             classifierId: BETA_CLASSIFIER_ID,
-            campaignId: config.campaign_id ?? "",
-            startedAt: config.campaign_started_at ?? "",
+            campaignId: config.campaign_id,
+            startedAt: config.campaign_started_at,
         };
     }
 

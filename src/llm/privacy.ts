@@ -29,6 +29,5 @@ export function sanitizeSensitiveText(input: string, channelLabels: Readonly<Rec
         .replace(/https?:\/\/\S+/giu, "[link omitted]")
         .replace(/\b\d{17,20}\b/gu, "[id omitted]")
         .replace(PHONE_NUMBER, "[phone number omitted]")
-        .replace(/\s+$/g, "")
         .trim();
 }

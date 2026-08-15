@@ -139,11 +139,7 @@ export class UserInteractionStore {
             const key = classifierRunKey(campaign.classifierId, userId);
             if (this.inFlight.has(key)) return { status: "busy" };
             const existing = classifierRecord(this.records.get(userId), campaign.classifierId);
-            if (
-                existing?.campaignId === campaign.campaignId &&
-                existing.decision === "ROUTE" &&
-                classifierCampaignIsActive(campaign)
-            ) {
+            if (existing?.campaignId === campaign.campaignId && existing.decision === "ROUTE") {
                 return { status: "already_routed" };
             }
             const run: ClassifierRun = {

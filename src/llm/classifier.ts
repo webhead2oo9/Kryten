@@ -167,7 +167,7 @@ export class LlmClassifier {
         this.metrics.submitted++;
         if (this.closed) return Promise.resolve(this.fallback(fallbackLabel, "disabled"));
         const config = this.effectiveConfig();
-        if (!config || !this.authorized(isAuthorized)) {
+        if (!config || !authorized(isAuthorized)) {
             return Promise.resolve(this.fallback(fallbackLabel, "disabled"));
         }
         if (!this.environment[config.apiKeyEnv]?.trim()) {
@@ -201,7 +201,7 @@ export class LlmClassifier {
                             resolve(this.fallback(fallbackLabel, "stale"));
                             return;
                         }
-                        if (!this.authorized(isAuthorized)) {
+                        if (!authorized(isAuthorized)) {
                             resolve(this.fallback(fallbackLabel, "disabled"));
                             return;
                         }
@@ -220,7 +220,7 @@ export class LlmClassifier {
                             resolve(this.fallback(fallbackLabel, "invalid_request"));
                             return;
                         }
-                        if (!this.authorized(isAuthorized)) {
+                        if (!authorized(isAuthorized)) {
                             resolve(this.fallback(fallbackLabel, "disabled"));
                             return;
                         }
@@ -279,14 +279,6 @@ export class LlmClassifier {
         };
     }
 
-    private authorized(check: () => boolean): boolean {
-        try {
-            return check();
-        } catch {
-            return false;
-        }
-    }
-
     private start(job: QueuedJob): void {
         this.inFlight++;
         void job
@@ -321,7 +313,7 @@ export class LlmClassifier {
         isAuthorized: () => boolean,
     ): Promise<ClassificationResult<Label>> {
         const started = Date.now();
-        if (this.closed || !this.authorized(isAuthorized)) {
+        if (this.closed || !authorized(isAuthorized)) {
             return this.finish(task.fallbackLabel, "disabled", started, EMPTY_USAGE);
         }
         const apiKey = this.environment[config.apiKeyEnv]?.trim();
@@ -526,4 +518,13 @@ async function readTextBounded(response: Response, maxBytes: number): Promise<st
         chunks.push(value);
     }
     return Buffer.concat(chunks, received).toString("utf8");
+}
+
+/** Fail-closed authorization re-check: a throwing gate means "not authorized". */
+export function authorized(check: () => boolean): boolean {
+    try {
+        return check();
+    } catch {
+        return false;
+    }
 }

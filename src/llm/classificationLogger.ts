@@ -1,6 +1,6 @@
 import { Colors, EmbedBuilder, type Message } from "discord.js";
 import type { KrytenClient } from "../classes/client";
-import type { ClassificationResult, ClassificationStatus } from "./classifier";
+import { authorized, type ClassificationResult, type ClassificationStatus } from "./classifier";
 import { sanitizeSensitiveText } from "./privacy";
 
 export interface ClassificationLoggerMetrics {
@@ -71,14 +71,6 @@ export class ClassificationLogger {
         } catch {
             this.failures++;
         }
-    }
-}
-
-function authorized(check: () => boolean): boolean {
-    try {
-        return check();
-    } catch {
-        return false;
     }
 }
 

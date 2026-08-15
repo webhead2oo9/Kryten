@@ -38,6 +38,12 @@ export function memberHasAnyRole(member: unknown, roleIds: readonly string[]): b
  * enforcement). Returns null when the member can't be resolved at all: the
  * author can't be confirmed non-exempt, so enforcement callers must treat
  * null as fail-closed (skip), never as "not exempt".
+ *
+ * Assumes GuildMember partials stay disabled (index.ts enables only
+ * Partials.Message/Channel), so a non-null member always has roles.cache.
+ * Enabling Partials.GuildMember would make a partial member (roles
+ * undefined) evaluate as non-exempt — fail-OPEN — so also fetch on that
+ * shape if partials ever change.
  */
 export async function messageAuthorHasExemptRole(
     message: Message,
