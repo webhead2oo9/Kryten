@@ -3,17 +3,12 @@ import { KrytenClient } from "../../classes/client";
 import { AccentColor, renderFields } from "../../utils/cv2";
 import { clampText } from "../../utils/format";
 import { sendAlertWithGallery } from "../../utils/imageGallery";
+import { sweepExpired } from "../../utils/sweepExpired";
 
 // The alert itself re-pings the mod role, so without a per-user throttle a user
 // repeatedly typing the mod mention generates unbounded real mod pings.
 const MODPING_COOLDOWN_MS = 10_000;
 const lastAlertByUser = new Map<string, number>();
-
-function sweep(map: Map<string, number>, now: number, ttlMs: number): void {
-    for (const [key, ts] of map) {
-        if (now - ts > ttlMs) map.delete(key);
-    }
-}
 
 /**
  * Detect explicit mentions of the configured moderator role and forward an
@@ -38,12 +33,12 @@ export async function handleModPing(message: Message, client: KrytenClient): Pro
     // Throttle per author so a user spamming the mod mention can't drive an
     // unbounded stream of mod-role pings through the bot.
     const now = Date.now();
-    sweep(lastAlertByUser, now, MODPING_COOLDOWN_MS);
+    sweepExpired(lastAlertByUser, now, MODPING_COOLDOWN_MS);
     const last = lastAlertByUser.get(message.author.id);
     if (last !== undefined && now - last < MODPING_COOLDOWN_MS) return;
     lastAlertByUser.set(message.author.id, now);
 
-    const link = `https://discord.com/channels/${guild.id}/${message.channelId}/${message.id}`;
+    const link = message.url;
     // The mod-role ping lives in a TextDisplay; allowedMentions restricted to
     // that role keeps the author/channel mentions from pinging while still
     // notifying the mods.

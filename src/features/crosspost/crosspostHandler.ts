@@ -1,9 +1,16 @@
 import { ContainerBuilder, Message, MessageFlags, PartialMessage, TextChannel, TextDisplayBuilder } from "discord.js";
 import { KrytenClient } from "../../classes/client";
+import type { Config } from "../../types";
 import { ActionResult, deleteMessageById, kickMember, sendModAlert, timeoutMember } from "../moderation/actions";
 import { channelOrParentListed } from "../../utils/channels";
 import { AccentColor, renderFields } from "../../utils/cv2";
+import { messageAuthorHasExemptRole } from "../../utils/staff";
 import { Comparison, Fingerprint, SimilarityEngine, SimilarityThresholds } from "./similarity";
+
+/** Registry gate and settings() share this so the enabled default can't drift. */
+export function crosspostEnabled(config: Config): boolean {
+    return config.moderation?.crosspost?.enabled ?? true;
+}
 
 const WARNING_COOLDOWN_SECONDS = 300;
 const BURST_INCIDENT_COOLDOWN_SECONDS = 60;
@@ -111,7 +118,7 @@ export class CrosspostHandler {
     private settings(): CrosspostSettings {
         const c = this.client.config.moderation?.crosspost ?? {};
         return {
-            enabled: c.enabled ?? true,
+            enabled: crosspostEnabled(this.client.config),
             windowSeconds: c.window_seconds ?? 900,
             sequenceRatioThreshold: c.sequence_ratio_threshold ?? 0.85,
             jaccardThreshold: c.jaccard_threshold ?? 0.65,
@@ -191,7 +198,7 @@ export class CrosspostHandler {
         }
     }
 
-    async check(message: Message): Promise<void> {
+    async process(message: Message): Promise<void> {
         if (message.author.bot) return;
         const s = this.settings();
         if (!s.enabled) return;
@@ -200,24 +207,8 @@ export class CrosspostHandler {
         // moderation blacklist behavior).
         if (channelOrParentListed(message.channel, message.channelId, s.ignoredChannels)) return;
 
-        // Whitelist + staff exemption. If the member isn't cached, fetch it
-        // rather than skipping the check (avoids actioning an exempt user).
-        // Staff are exempt in addition to the dedicated whitelist so a trusted
-        // moderator can't be warned/timed-out/kicked by crosspost rules.
-        const staffRoles = Array.isArray(this.client.config.staff_roles) ? this.client.config.staff_roles : [];
-        const exemptRoleIds = [...s.whitelistedRoleIds, ...staffRoles];
-        if (exemptRoleIds.length) {
-            let roles = message.member?.roles.cache;
-            if (!roles) {
-                const fetched = await message.guild?.members.fetch(message.author.id).catch(() => null);
-                roles = fetched?.roles.cache;
-            }
-            // Fail closed: an unresolved member can't be confirmed non-exempt, so
-            // skip detection rather than risk warning/timing-out a whitelisted or
-            // staff user whose member object happened to miss the cache and fetch.
-            if (!roles) return;
-            if (roles.some(role => exemptRoleIds.includes(role.id))) return;
-        }
+        // Staff + whitelist exemption; null = member unresolvable, fail closed.
+        if ((await messageAuthorHasExemptRole(message, this.client.config, s.whitelistedRoleIds)) !== false) return;
 
         const attachmentFingerprint = this.attachmentFingerprint(message);
         const hasText = message.content.trim().length > 0;

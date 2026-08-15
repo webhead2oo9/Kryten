@@ -1,4 +1,12 @@
-import { Config } from "../types";
+import type { Message } from "discord.js";
+import type { Config } from "../types";
+
+function staffRoleIds(config: Config): readonly string[] {
+    if (config.staff_roles !== undefined && !Array.isArray(config.staff_roles)) {
+        console.error("config.staff_roles must be an array of role id strings; treating as empty (no staff).");
+    }
+    return Array.isArray(config.staff_roles) ? config.staff_roles : [];
+}
 
 /**
  * The single staff-membership rule (staff gating is a security boundary —
@@ -8,11 +16,7 @@ import { Config } from "../types";
  * Fails closed when staff_roles is missing/empty or the member is unknown.
  */
 export function memberHasStaffRole(member: unknown, config: Config): boolean {
-    const staffRoles = Array.isArray(config.staff_roles) ? config.staff_roles : [];
-    if (config.staff_roles !== undefined && !Array.isArray(config.staff_roles)) {
-        console.error("config.staff_roles must be an array of role id strings; treating as empty (no staff).");
-    }
-    return memberHasAnyRole(member, staffRoles);
+    return memberHasAnyRole(member, staffRoleIds(config));
 }
 
 export function memberHasAnyRole(member: unknown, roleIds: readonly string[]): boolean {
@@ -25,4 +29,24 @@ export function memberHasAnyRole(member: unknown, roleIds: readonly string[]): b
         ?.cache;
     if (!roleCache) return false;
     return roleCache.some(role => roleIds.includes(role.id));
+}
+
+/**
+ * Shared enforcement exemption: the global staff_roles ∪ a feature's
+ * whitelisted_role_ids, resolved against the message's author — fetching the
+ * member when uncached (an uncached exempt user must not fall through to
+ * enforcement). Returns null when the member can't be resolved at all: the
+ * author can't be confirmed non-exempt, so enforcement callers must treat
+ * null as fail-closed (skip), never as "not exempt".
+ */
+export async function messageAuthorHasExemptRole(
+    message: Message,
+    config: Config,
+    whitelistedRoleIds: readonly string[],
+): Promise<boolean | null> {
+    const exemptRoleIds = [...whitelistedRoleIds, ...staffRoleIds(config)];
+    if (!exemptRoleIds.length) return false;
+    const member = message.member ?? (await message.guild?.members.fetch(message.author.id).catch(() => null));
+    if (!member) return null;
+    return memberHasAnyRole(member, exemptRoleIds);
 }

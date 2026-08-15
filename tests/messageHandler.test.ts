@@ -23,16 +23,23 @@ vi.mock("../src/features/imageFingerprint/imageFingerprintHandler", () => ({
     ImageFingerprintHandler: class {
         process = H.imageProcess;
     },
+    // Faithful copy of the real gate so the registry tests can drive it via config.
+    imageFingerprintEnabled: (config: KrytenClient["config"]) => config.moderation?.image_fingerprint?.enabled ?? false,
 }));
 vi.mock("../src/features/crosspost/crosspostHandler", () => ({
     CrosspostHandler: class {
-        check = H.crosspostCheck;
+        process = H.crosspostCheck;
         handleMessageDeletion = H.crosspostDelete;
     },
+    crosspostEnabled: (config: KrytenClient["config"]) => config.moderation?.crosspost?.enabled ?? true,
 }));
 vi.mock("../src/features/autoresponder/autoResponder", () => ({
     AutoResponder: class {
         process = H.autoProcess;
+        constructor(private readonly client: KrytenClient) {}
+        isConfigured(): boolean {
+            return !!this.client.config.auto_responder?.random_greeting_channel_id;
+        }
     },
 }));
 vi.mock("../src/features/userInteractions/store", () => ({

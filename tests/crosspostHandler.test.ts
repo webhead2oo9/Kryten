@@ -117,7 +117,7 @@ async function crosspostAcross(
             member: opts?.member,
             guild: opts?.guild,
         });
-        await handler.check(m);
+        await handler.process(m);
         msgs.push(m);
     }
     return msgs;
@@ -148,7 +148,7 @@ describe("CrosspostHandler — burst threshold is strictly greater than burst_ch
         expect(handler.getMetrics().warningsSent).toBe(2); // b and c each warn against a
 
         // A 4th distinct channel → channels.size === 4 > 3 → burst handling.
-        await handler.check(makeMessage({ channelId: "chan-d", content: IDENTICAL }));
+        await handler.process(makeMessage({ channelId: "chan-d", content: IDENTICAL }));
         expect(handler.getMetrics().burstSpamDetected).toBe(1);
     });
 });
@@ -237,7 +237,7 @@ describe("CrosspostHandler — dry_run matrix", () => {
         // re-bursts and, being a first true offense, times out (does not kick).
         crosspost.dry_run = false;
         vi.setSystemTime(BASE + 120_000);
-        await handler.check(makeMessage({ channelId: "chan-a", content: IDENTICAL, member, guild }));
+        await handler.process(makeMessage({ channelId: "chan-a", content: IDENTICAL, member, guild }));
         expect(member.timeout).toHaveBeenCalledTimes(1);
         expect(member.kick).not.toHaveBeenCalled();
     });
@@ -261,8 +261,8 @@ describe("CrosspostHandler — shouldWarn semantics", () => {
         const client = makeClient({ enabled: true, dry_run: true });
         const handler = new CrosspostHandler(client);
 
-        await handler.check(makeMessage({ channelId: "chan-a", content: SIM_A }));
-        await handler.check(makeMessage({ channelId: "chan-b", content: SIM_B }));
+        await handler.process(makeMessage({ channelId: "chan-a", content: SIM_A }));
+        await handler.process(makeMessage({ channelId: "chan-b", content: SIM_B }));
 
         expect(handler.getMetrics().messagesProcessed).toBe(2);
         expect(handler.getMetrics().similarityMatches).toBe(1);
@@ -275,8 +275,8 @@ describe("CrosspostHandler — shouldWarn semantics", () => {
         const handler = new CrosspostHandler(client);
         const file = [{ name: "screenshot.png", size: 12_345 }];
 
-        await handler.check(makeMessage({ channelId: "chan-a", attachments: attachments(file) }));
-        await handler.check(makeMessage({ channelId: "chan-b", attachments: attachments(file) }));
+        await handler.process(makeMessage({ channelId: "chan-a", attachments: attachments(file) }));
+        await handler.process(makeMessage({ channelId: "chan-b", attachments: attachments(file) }));
 
         expect(handler.getMetrics().exactMatches).toBe(1);
         expect(handler.getMetrics().warningsSent).toBe(1);
@@ -286,8 +286,8 @@ describe("CrosspostHandler — shouldWarn semantics", () => {
         const client = makeClient({ enabled: true, dry_run: false });
         const handler = new CrosspostHandler(client);
 
-        await handler.check(makeMessage({ channelId: "chan-a", content: SIM_A }));
-        await handler.check(makeMessage({ channelId: "chan-b", content: SIM_B }));
+        await handler.process(makeMessage({ channelId: "chan-a", content: SIM_A }));
+        await handler.process(makeMessage({ channelId: "chan-b", content: SIM_B }));
 
         expect(handler.getMetrics().similarityMatches).toBe(1);
         expect(handler.getMetrics().warningsSent).toBe(1);
@@ -301,7 +301,9 @@ describe("CrosspostHandler — staff/whitelist exemption", () => {
         const handler = new CrosspostHandler(client);
 
         // member undefined → not cached → the handler must fetch rather than skip.
-        await handler.check(makeMessage({ channelId: "chan-a", content: IDENTICAL, member: undefined, guild: makeGuild(fetch) }));
+        await handler.process(
+            makeMessage({ channelId: "chan-a", content: IDENTICAL, member: undefined, guild: makeGuild(fetch) }),
+        );
 
         expect(fetch).toHaveBeenCalledWith(AUTHOR_ID);
         expect(recentOf(handler)).toBeUndefined();
@@ -313,8 +315,13 @@ describe("CrosspostHandler — staff/whitelist exemption", () => {
         const client = makeClient({ enabled: true, whitelisted_role_ids: ["vip-role"] });
         const handler = new CrosspostHandler(client);
 
-        await handler.check(
-            makeMessage({ channelId: "chan-a", content: IDENTICAL, member: makeMember(["vip-role"]), guild: makeGuild(fetch) }),
+        await handler.process(
+            makeMessage({
+                channelId: "chan-a",
+                content: IDENTICAL,
+                member: makeMember(["vip-role"]),
+                guild: makeGuild(fetch),
+            }),
         );
 
         expect(fetch).not.toHaveBeenCalled();
@@ -329,7 +336,7 @@ describe("CrosspostHandler — staff/whitelist exemption", () => {
         const client = makeClient({ enabled: true, whitelisted_role_ids: ["vip-role"] });
         const handler = new CrosspostHandler(client);
 
-        await handler.check(
+        await handler.process(
             makeMessage({ channelId: "chan-a", content: IDENTICAL, member: undefined, guild: makeGuild(fetch) }),
         );
 
@@ -357,8 +364,8 @@ describe("CrosspostHandler — directional update suppression", () => {
     it("suppresses a longer elaboration of an earlier message as an update", async () => {
         const handler = new CrosspostHandler(makeClient({ ...updateConfig }));
 
-        await handler.check(makeMessage({ channelId: "chan-a", content: SHORT }));
-        await handler.check(makeMessage({ channelId: "chan-b", content: LONG }));
+        await handler.process(makeMessage({ channelId: "chan-a", content: SHORT }));
+        await handler.process(makeMessage({ channelId: "chan-b", content: LONG }));
 
         expect(handler.getMetrics().updatesDetected).toBe(1);
         expect(handler.getMetrics().warningsSent).toBe(0);
@@ -367,8 +374,8 @@ describe("CrosspostHandler — directional update suppression", () => {
     it("does NOT suppress a shorter reworded crosspost (the symmetric-ratio regression guard)", async () => {
         const handler = new CrosspostHandler(makeClient({ ...updateConfig }));
 
-        await handler.check(makeMessage({ channelId: "chan-a", content: LONG }));
-        await handler.check(makeMessage({ channelId: "chan-b", content: SHORT }));
+        await handler.process(makeMessage({ channelId: "chan-a", content: LONG }));
+        await handler.process(makeMessage({ channelId: "chan-b", content: SHORT }));
 
         expect(handler.getMetrics().updatesDetected).toBe(0);
         expect(handler.getMetrics().warningsSent).toBe(1);
@@ -380,8 +387,12 @@ describe("CrosspostHandler — attachment fingerprint uses name:size", () => {
         const client = makeClient({ enabled: true, dry_run: true });
         const handler = new CrosspostHandler(client);
 
-        await handler.check(makeMessage({ channelId: "chan-a", attachments: attachments([{ name: "image.png", size: 100 }]) }));
-        await handler.check(makeMessage({ channelId: "chan-b", attachments: attachments([{ name: "image.png", size: 200 }]) }));
+        await handler.process(
+            makeMessage({ channelId: "chan-a", attachments: attachments([{ name: "image.png", size: 100 }]) }),
+        );
+        await handler.process(
+            makeMessage({ channelId: "chan-b", attachments: attachments([{ name: "image.png", size: 200 }]) }),
+        );
 
         expect(handler.getMetrics().messagesProcessed).toBe(2);
         expect(handler.getMetrics().exactMatches).toBe(0);
@@ -395,10 +406,10 @@ describe("CrosspostHandler — warn cooldown", () => {
         const client = makeClient({ enabled: true, dry_run: true, burst_channel_threshold: 5 });
         const handler = new CrosspostHandler(client);
 
-        await handler.check(makeMessage({ channelId: "chan-a", content: IDENTICAL })); // source
-        await handler.check(makeMessage({ channelId: "chan-b", content: IDENTICAL })); // warns in chan-b
+        await handler.process(makeMessage({ channelId: "chan-a", content: IDENTICAL })); // source
+        await handler.process(makeMessage({ channelId: "chan-b", content: IDENTICAL })); // warns in chan-b
         const third = makeMessage({ channelId: "chan-b", content: IDENTICAL });
-        await handler.check(third); // matches chan-a again, but chan-b is on cooldown
+        await handler.process(third); // matches chan-a again, but chan-b is on cooldown
 
         expect(handler.getMetrics().warningsSent).toBe(1);
         expect(handler.getMetrics().warningsSuppressed).toBe(1);
@@ -411,9 +422,9 @@ describe("CrosspostHandler — handleMessageDeletion", () => {
         const client = makeClient({ enabled: true, dry_run: true });
         const handler = new CrosspostHandler(client);
 
-        await handler.check(makeMessage({ channelId: "chan-a", content: IDENTICAL, id: "source-1" }));
+        await handler.process(makeMessage({ channelId: "chan-a", content: IDENTICAL, id: "source-1" }));
         const duplicate = makeMessage({ channelId: "chan-b", content: IDENTICAL, id: "dup-1" });
-        await handler.check(duplicate);
+        await handler.process(duplicate);
 
         const stored = (handler as any).warningMessages.get("dup-1")[0].warningMessage;
         expect((handler as any).spamWarnings.get(AUTHOR_ID)?.get("chan-b")).toBeDefined();
@@ -429,9 +440,9 @@ describe("CrosspostHandler — handleMessageDeletion", () => {
         const client = makeClient({ enabled: true, dry_run: true });
         const handler = new CrosspostHandler(client);
 
-        await handler.check(makeMessage({ channelId: "chan-a", content: IDENTICAL, id: "source-1" }));
+        await handler.process(makeMessage({ channelId: "chan-a", content: IDENTICAL, id: "source-1" }));
         const duplicate = makeMessage({ channelId: "chan-b", content: IDENTICAL, id: "dup-1" });
-        await handler.check(duplicate);
+        await handler.process(duplicate);
 
         const stored = (handler as any).warningMessages.get("dup-1")[0].warningMessage;
 

@@ -14,6 +14,11 @@ export class AutoResponder {
         await this.interactions.flushNow();
     }
 
+    /** Registry gate and process() share this so the enable check can't drift. */
+    isConfigured(): boolean {
+        return this.settings().randomGreetingChannelId !== "";
+    }
+
     private settings(): { trackChannelIds: string[]; randomGreetingChannelId: string } {
         const config = this.client.config.auto_responder ?? {};
         return {
@@ -28,8 +33,8 @@ export class AutoResponder {
 
     async process(message: Message): Promise<void> {
         if (message.author.bot) return;
+        if (!this.isConfigured()) return;
         const settings = this.settings();
-        if (!settings.randomGreetingChannelId) return;
 
         const currentTime = Math.floor(message.createdTimestamp / 1_000);
         const userId = message.author.id;

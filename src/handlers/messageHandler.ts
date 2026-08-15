@@ -2,8 +2,8 @@ import { Message, PartialMessage } from "discord.js";
 import { KrytenClient } from "../classes/client";
 import { Feature } from "../features/feature";
 import { handleModPing } from "../features/moderation/modPing";
-import { CrosspostHandler } from "../features/crosspost/crosspostHandler";
-import { ImageFingerprintHandler } from "../features/imageFingerprint/imageFingerprintHandler";
+import { CrosspostHandler, crosspostEnabled } from "../features/crosspost/crosspostHandler";
+import { ImageFingerprintHandler, imageFingerprintEnabled } from "../features/imageFingerprint/imageFingerprintHandler";
 import { AutoResponder } from "../features/autoresponder/autoResponder";
 import { BetaClassifier } from "../features/betaClassifier/betaClassifier";
 import { BetaResponder } from "../features/betaResponder/betaResponder";
@@ -41,7 +41,7 @@ function build(client: KrytenClient): void {
             // image crossposts raise a staff review. Runs before text crosspost so
             // a known-bad image is deleted/enforced first.
             name: "image-fingerprint",
-            enabled: c => c.config.moderation?.image_fingerprint?.enabled ?? false,
+            enabled: c => imageFingerprintEnabled(c.config),
             // process() resolves true when enforcement deleted the message —
             // that stops the pipeline so crosspost never tracks a gone message.
             onMessage: message => imageFingerprint!.process(message),
@@ -63,13 +63,13 @@ function build(client: KrytenClient): void {
         },
         {
             name: "auto-responder",
-            enabled: c => !!c.config.auto_responder?.random_greeting_channel_id,
+            enabled: () => autoResponder!.isConfigured(),
             onMessage: message => autoResponder!.process(message),
         },
         {
             name: "crosspost",
-            enabled: c => c.config.moderation?.crosspost?.enabled ?? true,
-            onMessage: message => crosspost!.check(message),
+            enabled: c => crosspostEnabled(c.config),
+            onMessage: message => crosspost!.process(message),
             onMessageDelete: message => crosspost!.handleMessageDeletion(message),
         },
         {

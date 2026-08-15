@@ -28,7 +28,8 @@ import { randomBytes } from "crypto";
 import { KrytenClient } from "../../classes/client";
 import { channelOrParentListed } from "../../utils/channels";
 import { AccentColor, renderFields, resolveCard } from "../../utils/cv2";
-import { memberHasStaffRole } from "../../utils/staff";
+import { memberHasStaffRole, messageAuthorHasExemptRole } from "../../utils/staff";
+import type { Config } from "../../types";
 import { ActionResult, kickMember, timeoutMember } from "../moderation/actions";
 import { computePhashHex } from "./decode";
 import {
@@ -41,6 +42,11 @@ import {
     phashFromHex,
 } from "./store";
 import { ImageSource, resolveImageSources } from "./imageSources";
+
+/** Registry gate and settings() share this so the enabled default can't drift. */
+export function imageFingerprintEnabled(config: Config): boolean {
+    return config.moderation?.image_fingerprint?.enabled ?? false;
+}
 
 export const IMGFP_BUTTON_PREFIX = "imgfp:";
 const REVIEW_TTL_MS = 24 * 60 * 60 * 1000;
@@ -164,7 +170,7 @@ export class ImageFingerprintHandler {
         const c = this.client.config.moderation?.image_fingerprint ?? {};
         const matchTolerance = c.match_tolerance ?? 5;
         return {
-            enabled: c.enabled ?? false,
+            enabled: imageFingerprintEnabled(this.client.config),
             dryRun: c.dry_run ?? true,
             reportHitsInDryRun: c.report_hits_in_dry_run ?? true,
             matchTolerance,
@@ -195,22 +201,10 @@ export class ImageFingerprintHandler {
         if (message.author.bot || !message.guild) return false;
         if (channelOrParentListed(message.channel, message.channelId, s.ignoredChannels)) return false;
         if (message.attachments.size === 0) return false;
-        // Never scan or action a whitelisted or staff member's images. If the
-        // member isn't cached, fetch it (mirroring crosspost) rather than letting
-        // an uncached exempt user fall through to enforcement. Staff are exempt in
-        // addition to the dedicated whitelist so a trusted moderator posting a
-        // flagged image can't be kicked/timed-out.
-        const staffRoles = Array.isArray(this.client.config.staff_roles) ? this.client.config.staff_roles : [];
-        const exemptRoleIds = [...s.whitelistedRoleIds, ...staffRoles];
-        if (exemptRoleIds.length) {
-            const member = message.member ?? (await message.guild?.members.fetch(message.author.id).catch(() => null));
-            const roles = member?.roles.cache;
-            // Fail closed: an unresolved member can't be confirmed non-exempt, so
-            // skip scanning rather than risk kicking/timing-out a whitelisted or
-            // staff user whose member object happened to miss the cache and fetch.
-            if (!roles) return false;
-            if (roles.some(role => exemptRoleIds.includes(role.id))) return false;
-        }
+        // Never scan or action a whitelisted or staff member's images. null =
+        // member unresolvable: fail closed rather than risk enforcement.
+        if ((await messageAuthorHasExemptRole(message, this.client.config, s.whitelistedRoleIds)) !== false)
+            return false;
 
         // Keep the store's sync-upsert action hint aligned with live config.
         this.store.defaultAction = s.defaultAction;

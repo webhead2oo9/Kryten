@@ -12,6 +12,7 @@ import { channelOrParentListed } from "../utils/channels";
 import { AccentColor, renderFields } from "../utils/cv2";
 import { clampText } from "../utils/format";
 import { sendAlertWithGallery } from "../utils/imageGallery";
+import { sweepExpired } from "../utils/sweepExpired";
 
 // Reporting is deliberately open to everyone, so it needs abuse guards:
 // without these, one user re-reporting the same message is an unlimited ping vector.
@@ -19,12 +20,6 @@ const REPORTER_COOLDOWN_MS = 60_000;
 const MESSAGE_DEDUP_MS = 10 * 60_000;
 const lastReportByUser = new Map<string, number>();
 const recentlyReportedMessages = new Map<string, number>();
-
-function sweep(map: Map<string, number>, now: number, ttlMs: number): void {
-    for (const [key, ts] of map) {
-        if (now - ts > ttlMs) map.delete(key);
-    }
-}
 
 const commandData = new ContextMenuCommandBuilder()
     .setName("Report Message")
@@ -68,8 +63,8 @@ export default class extends ContextCommand {
         }
 
         const now = Date.now();
-        sweep(lastReportByUser, now, REPORTER_COOLDOWN_MS);
-        sweep(recentlyReportedMessages, now, MESSAGE_DEDUP_MS);
+        sweepExpired(lastReportByUser, now, REPORTER_COOLDOWN_MS);
+        sweepExpired(recentlyReportedMessages, now, MESSAGE_DEDUP_MS);
 
         if (recentlyReportedMessages.has(message.id)) {
             await interaction.reply({
