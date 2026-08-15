@@ -7,6 +7,7 @@ import {
     getCrosspostHandler,
     getImageFingerprintHandler,
     getLlmClassifier,
+    getMessageLogger,
 } from "./handlers/messageHandler";
 import { COMMANDS_READ_PATH, handleCommandRead } from "./api/commandRead";
 import { handleProposalIntake } from "./api/proposalIntake";
@@ -57,6 +58,7 @@ export function startHealthServer(client: KrytenClient, port: number): Server {
                         llmClassifier: getLlmClassifier(client).getMetrics(),
                         classificationLogger: getClassificationLogger(client).getMetrics(),
                         betaClassifier: getBetaClassifier(client).getMetrics(),
+                        messageLogging: getMessageLogger(client).getMetrics(),
                     },
                     errors: {
                         recent: client.errorCount,

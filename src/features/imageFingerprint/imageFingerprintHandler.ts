@@ -31,6 +31,7 @@ import { AccentColor, renderFields, resolveCard } from "../../utils/cv2";
 import { memberHasStaffRole, messageAuthorHasExemptRole } from "../../utils/staff";
 import type { Config } from "../../types";
 import { ActionResult, kickMember, timeoutMember } from "../moderation/actions";
+import { markInternalMessageDelete } from "../messageLogging/messageLogger";
 import { computePhashHex } from "./decode";
 import {
     CROSSPOST_REVIEW_PROVENANCE,
@@ -266,9 +267,17 @@ export class ImageFingerprintHandler {
             );
         } else {
             if (s.deleteOnMatch) {
+                const clearDeleteMarker = markInternalMessageDelete(
+                    this.client,
+                    message.id,
+                    "known-bad image fingerprint",
+                );
                 deleted = await message.delete().then(
                     () => true,
-                    () => false,
+                    () => {
+                        clearDeleteMarker();
+                        return false;
+                    },
                 );
             }
             if (s.enforceKnownBad) {

@@ -118,5 +118,17 @@
         "ttl_hours": 72,
         "rate_limit_per_minute": 100,
         "db_path": "./data/proposals.db"
+    },
+    "logging": {
+        "enabled": false,
+        "guild_id": "YOUR_GUILD_ID_HERE",
+        "default_channel_id": "YOUR_LOG_CHANNEL_ID_HERE",
+        "message_channel_id": "YOUR_MESSAGE_LOG_CHANNEL_ID_HERE",
+        "ignored_channel_ids": [],
+        "retention_days": 30,
+        "max_snapshots": 100000,
+        "db_path": "./data/message_logging.db",
+        "encryption_key_env": "MESSAGE_LOG_ENCRYPTION_KEY",
+        "rehost_images": true
     }
 }

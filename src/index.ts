@@ -6,8 +6,11 @@ import {
     getAutoResponder,
     getBetaClassifier,
     getImageFingerprintHandler,
+    getMessageLogger,
     handleMessage,
     handleMessageDelete,
+    handleMessageDeleteBulk,
+    handleMessageUpdate,
     initFeatures,
 } from "./handlers/messageHandler";
 import { handleInteraction } from "./handlers/interactionRouter";
@@ -18,7 +21,7 @@ import { ensureProposalService } from "./handlers/proposalHandler";
 loadEnv();
 
 const client = new KrytenClient({
-    intents: ["Guilds", "GuildMessages", "MessageContent"],
+    intents: ["Guilds", "GuildMessages", "GuildModeration", "MessageContent"],
     // Partials so messageDelete fires for messages no longer in cache
     // (crosspost warning cleanup needs deletes of older messages).
     partials: [Partials.Message, Partials.Channel],
@@ -177,9 +180,15 @@ client.on("messageDelete", async message => {
 });
 
 client.on("messageDeleteBulk", async messages => {
-    for (const message of messages.values()) {
-        await handleMessageDelete(message, client).catch(console.error);
-    }
+    await handleMessageDeleteBulk(messages, client).catch(console.error);
+});
+
+client.on("messageUpdate", async (oldMessage, newMessage) => {
+    await handleMessageUpdate(oldMessage, newMessage, client).catch(console.error);
+});
+
+client.on("guildAuditLogEntryCreate", (entry, guild) => {
+    getMessageLogger(client).recordAudit(entry, guild);
 });
 
 async function shutdown(signal: string): Promise<void> {
@@ -191,9 +200,22 @@ async function shutdown(signal: string): Promise<void> {
         client.poller.stop();
         client.proposalService?.stop();
         getImageFingerprintHandler(client).stop();
+        const messageLogger = getMessageLogger(client);
+        messageLogger.stop();
         const betaClassifier = getBetaClassifier(client);
         betaClassifier.stop();
         healthServer?.close();
+        // Ship queued log events BEFORE destroying the client: destroy() clears
+        // the REST token, after which every send fails. A clean drain means no
+        // send is in flight, so the SQLite handle can be closed; if the bound
+        // elapsed instead, process.exit below preserves the durable outbox.
+        const loggerDrained = await Promise.race([
+            messageLogger.drain().then(() => true),
+            new Promise<false>(resolve => {
+                setTimeout(() => resolve(false), 5000).unref();
+            }),
+        ]);
+        if (loggerDrained) messageLogger.close();
         // Destroy the client BEFORE flushing the greeter: the gateway stops
         // delivering messages, so a greeting completing mid-shutdown can't
         // queue a save behind the flush and lose it to process.exit.

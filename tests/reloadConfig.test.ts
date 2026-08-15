@@ -5,10 +5,12 @@ import type { Config } from "../src/types";
 const H = vi.hoisted(() => ({
     reconcile: vi.fn(async () => undefined),
     ensureProposalService: vi.fn(),
+    reconfigureLogging: vi.fn(async () => undefined),
 }));
 
 vi.mock("../src/handlers/messageHandler", () => ({
     getUserInteractionStore: () => ({ reconcileClassifierCampaigns: H.reconcile }),
+    getMessageLogger: () => ({ reconfigure: H.reconfigureLogging }),
 }));
 vi.mock("../src/handlers/proposalHandler", () => ({ ensureProposalService: H.ensureProposalService }));
 
@@ -19,6 +21,8 @@ describe("/reload_config interaction retention", () => {
         H.reconcile.mockReset();
         H.reconcile.mockResolvedValue(undefined);
         H.ensureProposalService.mockReset();
+        H.reconfigureLogging.mockReset();
+        H.reconfigureLogging.mockResolvedValue(undefined);
         const previous = { githubPollMinutes: 60 } satisfies Config;
         const next = { githubPollMinutes: 30 } satisfies Config;
         const context = commandContext(previous, next);
@@ -26,6 +30,8 @@ describe("/reload_config interaction retention", () => {
         await new ReloadConfigCommand().run(context);
 
         expect(H.reconcile).toHaveBeenCalledTimes(1);
+        expect(H.reconfigureLogging).toHaveBeenCalledWith(previous.logging);
+        expect(H.reconcile.mock.invocationCallOrder[0]).toBeLessThan(H.reconfigureLogging.mock.invocationCallOrder[0]!);
         expect(context.client.poller.start).toHaveBeenCalledTimes(1);
         expect(H.ensureProposalService).toHaveBeenCalledWith(context.client);
         expect(context.interaction.reply).toHaveBeenCalledWith(
@@ -37,6 +43,7 @@ describe("/reload_config interaction retention", () => {
         H.reconcile.mockReset();
         H.reconcile.mockRejectedValue(new Error("synthetic disk failure"));
         H.ensureProposalService.mockReset();
+        H.reconfigureLogging.mockReset();
         const previous = { githubPollMinutes: 60 } satisfies Config;
         const next = { githubPollMinutes: 30 } satisfies Config;
         const context = commandContext(previous, next);
@@ -44,10 +51,31 @@ describe("/reload_config interaction retention", () => {
         await new ReloadConfigCommand().run(context);
 
         expect(context.client.config).toBe(previous);
+        expect(H.reconfigureLogging).not.toHaveBeenCalled();
         expect(context.client.poller.start).not.toHaveBeenCalled();
         expect(H.ensureProposalService).not.toHaveBeenCalled();
         expect(context.interaction.reply).toHaveBeenCalledWith(
             expect.objectContaining({ content: expect.stringContaining("synthetic disk failure") }),
+        );
+    });
+
+    it("rolls back the config and logger when logging reconfiguration fails", async () => {
+        H.reconcile.mockReset();
+        H.ensureProposalService.mockReset();
+        H.reconfigureLogging.mockReset();
+        H.reconfigureLogging.mockRejectedValueOnce(new Error("wrong logging key")).mockResolvedValueOnce(undefined);
+        const previous = { githubPollMinutes: 60 } satisfies Config;
+        const next = { githubPollMinutes: 30, logging: { enabled: true } } satisfies Config;
+        const context = commandContext(previous, next);
+
+        await new ReloadConfigCommand().run(context);
+
+        expect(context.client.config).toBe(previous);
+        expect(H.reconfigureLogging).toHaveBeenCalledTimes(2);
+        expect(H.reconcile).toHaveBeenCalledTimes(1);
+        expect(context.client.poller.start).not.toHaveBeenCalled();
+        expect(context.interaction.reply).toHaveBeenCalledWith(
+            expect.objectContaining({ content: expect.stringContaining("wrong logging key") }),
         );
     });
 });

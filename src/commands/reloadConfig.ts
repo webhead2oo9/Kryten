@@ -2,7 +2,7 @@ import { SlashCommandBuilder } from "discord.js";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
 import { ensureProposalService } from "../handlers/proposalHandler";
-import { getUserInteractionStore } from "../handlers/messageHandler";
+import { getMessageLogger, getUserInteractionStore } from "../handlers/messageHandler";
 
 const command_data = new SlashCommandBuilder()
     .setName("reload_config")
@@ -21,12 +21,24 @@ export default class extends Command {
     override async run(ctx: CommandContext): Promise<any> {
         const previousConfig = ctx.client.config;
         const previousLoadFailed = ctx.client.configLoadFailed;
+        const messageLogger = getMessageLogger(ctx.client);
+        let attemptedConfig = previousConfig;
+        let loggingReconfigurationStarted = false;
         try {
             ctx.client.loadConfig();
+            attemptedConfig = ctx.client.config;
             await getUserInteractionStore(ctx.client).reconcileClassifierCampaigns();
+            // Reconfiguration can enforce a lower evidence-retention cap. Keep
+            // it last so a later subsystem failure cannot make a failed reload
+            // irreversibly discard snapshots before the config is rolled back.
+            loggingReconfigurationStarted = true;
+            await messageLogger.reconfigure(previousConfig.logging);
         } catch (error) {
             ctx.client.config = previousConfig;
             ctx.client.configLoadFailed = previousLoadFailed;
+            if (loggingReconfigurationStarted) {
+                await messageLogger.reconfigure(attemptedConfig.logging).catch(() => undefined);
+            }
             return ctx.interaction.reply({
                 content: `Failed to reload config: ${error instanceof Error ? error.message : String(error)}`,
                 ephemeral: true,
@@ -40,7 +52,7 @@ export default class extends Command {
         ensureProposalService(ctx.client);
 
         return ctx.interaction.reply({
-            content: "Reloaded (interaction retention, poller, and proposal service re-applied).",
+            content: "Reloaded (interaction retention, logging, poller, and proposal service re-applied).",
             ephemeral: true,
         });
     }

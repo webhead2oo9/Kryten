@@ -1,4 +1,4 @@
-import { Message, PartialMessage } from "discord.js";
+import { Message, PartialMessage, ReadonlyCollection } from "discord.js";
 import { KrytenClient } from "../classes/client";
 
 /**
@@ -16,5 +16,14 @@ export interface Feature {
      * continues to the next feature.
      */
     onMessage?(message: Message, client: KrytenClient): Promise<void | boolean>;
+    onMessageUpdate?(
+        oldMessage: Message | PartialMessage,
+        newMessage: Message | PartialMessage,
+        client: KrytenClient,
+    ): Promise<void>;
     onMessageDelete?(message: Message | PartialMessage, client: KrytenClient): Promise<void>;
+    onMessageDeleteBulk?(
+        messages: ReadonlyCollection<string, Message | PartialMessage>,
+        client: KrytenClient,
+    ): Promise<void>;
 }

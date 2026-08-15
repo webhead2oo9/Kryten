@@ -1,5 +1,6 @@
 import { ContainerBuilder, GuildMember, MessageFlags, TextChannel } from "discord.js";
 import { KrytenClient } from "../../classes/client";
+import { markInternalMessageDelete } from "../messageLogging/messageLogger";
 
 /**
  * Reusable moderation-action toolkit. Each action is self-contained, returns a
@@ -39,7 +40,11 @@ export async function deleteMessageById(client: KrytenClient, channelId: string,
         if (!channel || !channel.isTextBased()) return false;
         const message = await channel.messages.fetch(messageId).catch(() => null);
         if (!message) return false;
-        await message.delete();
+        const clearDeleteMarker = markInternalMessageDelete(client, messageId, "moderation action");
+        await message.delete().catch(error => {
+            clearDeleteMarker();
+            throw error;
+        });
         return true;
     } catch {
         return false;

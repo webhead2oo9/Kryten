@@ -1,6 +1,7 @@
 import { AttachmentBuilder, ChannelType, Message, TextChannel, Webhook } from "discord.js";
 import { KrytenClient } from "../../classes/client";
 import { downloadBounded } from "../../utils/boundedDownload";
+import { markInternalMessageDelete } from "../messageLogging/messageLogger";
 
 const WEBHOOK_NAME = "Link Fixer";
 // Case-insensitive: Discord embeds (and browsers) accept HTTPS://X.COM/... too.
@@ -104,9 +105,11 @@ export async function handleTwitterLinks(message: Message, client: KrytenClient)
     // (no Discord alert — this is a per-channel setup issue, not a per-message
     // anomaly) so a missing Manage Messages permission is at least diagnosable
     // rather than leaving a silent duplicate.
-    await message
-        .delete()
-        .catch(err => console.error(`Twitter link fixer: failed to delete original in #${channel.name}:`, err));
+    const clearDeleteMarker = markInternalMessageDelete(client, message.id, "twitter link fixer");
+    await message.delete().catch(err => {
+        clearDeleteMarker();
+        console.error(`Twitter link fixer: failed to delete original in #${channel.name}:`, err);
+    });
 }
 
 /**

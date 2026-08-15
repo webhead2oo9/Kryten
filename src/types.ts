@@ -155,6 +155,19 @@ export interface ProposalsConfig {
     db_path?: string; // SQLite path (default ./data/proposals.db)
 }
 
+export interface LoggingConfig {
+    enabled?: boolean; // Master switch (default false)
+    guild_id?: string; // The only guild whose message lifecycle is captured
+    default_channel_id?: string; // Fallback destination for lifecycle events
+    message_channel_id?: string; // Optional message-event destination override
+    ignored_channel_ids?: string[]; // Channels/threads excluded in addition to the moderation blacklist
+    retention_days?: number; // Encrypted snapshot retention (default 30)
+    max_snapshots?: number; // Encrypted snapshot cap (default 100000)
+    db_path?: string; // SQLite path (default ./data/message_logging.db)
+    encryption_key_env?: string; // 32-byte AES key env (default MESSAGE_LOG_ENCRYPTION_KEY)
+    rehost_images?: boolean; // Re-upload recoverable raster evidence (default true)
+}
+
 export interface Config {
     staff_roles?: string[];
     githubRepoOwner?: string; // e.g., "webhead2oo9"
@@ -169,6 +182,7 @@ export interface Config {
     beta_classifier?: BetaClassifierConfig;
     twitter?: TwitterConfig;
     proposals?: ProposalsConfig;
+    logging?: LoggingConfig;
 }
 
 /**

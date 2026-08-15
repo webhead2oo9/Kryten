@@ -40,6 +40,7 @@ See [PRIVACY.md](PRIVACY.md) for Kryten's data handling, retention, and deletion
    GUILD_ID=primary_guild_id_for_registration
    HEALTH_PORT=9010              # optional, defaults to 9010
    USER_INTERACTIONS_ENCRYPTION_KEY=base64_32_byte_key_for_interaction_state
+   MESSAGE_LOG_ENCRYPTION_KEY=independent_base64_32_byte_key_for_message_logs
    ```
 
 4. **Configure runtime** (`config.json`)
@@ -51,6 +52,7 @@ See [PRIVACY.md](PRIVACY.md) for Kryten's data handling, retention, and deletion
    | `githubCommandsDir` | Directory in the repo holding the `<name>.json` command files. |
    | `githubBranch` | Branch to read and commit commands on. |
    | `error_log_channel_id` | Optional Discord channel to receive error report cards. |
+   | `logging` | Optional encrypted, bounded message edit/delete logging. See `docs/MESSAGE_LOGGING.md`. |
 
 5. **Run the bot**
    ```bash
@@ -138,6 +140,7 @@ dist/             # Compiled JavaScript (tsc output)
 - **Slash commands missing**: Confirm `GUILD_ID` is set and the bot has Manage Guild + Manage Commands permissions.
 - **Bot starts but moderation features are inactive**: `config.json` failed to read/parse — the bot runs on an empty config with the message pipeline disabled (the startup log shows the parse error). Fix the file and run `/reload_config`.
 - **Bot crashes on startup**: Ensure `.env` entries are set before launch (e.g. the greeter requires a valid `USER_INTERACTIONS_ENCRYPTION_KEY`).
+- **Message logging will not start**: Enable the Guild Moderation intent, grant View Audit Log for moderator attribution, and provide a dedicated `MESSAGE_LOG_ENCRYPTION_KEY`.
 
 ## Health Endpoint
 

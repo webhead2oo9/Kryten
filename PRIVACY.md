@@ -30,6 +30,12 @@ repeatedly welcome established members.
 
 Staff classification logs contain the decision, processing status, and a link to the original Discord message. They do not copy the message text or username. Provider failure details are bounded and redacted before logging.
 
+## Message lifecycle logs
+
+When a server administrator explicitly enables message logging, Kryten keeps encrypted message snapshots so staff can review edits, single deletions, and bulk deletions. Snapshots can contain message text, Discord user/message/channel IDs, display labels, timestamps, and attachment metadata. Attachment bytes are not stored locally. Kryten may re-upload recoverable raster images directly to the configured staff log channel when an event is delivered.
+
+Logging is limited to one configured guild and excludes identifiable bots, webhooks, system messages, configured ignored channels, moderation-blacklisted channels, and the log destinations themselves. For uncached bulk deletions, Discord supplies message IDs without their authors; Kryten may retain those IDs as unrecovered evidence, but stores no author, content, or attachment data for them. Queued evidence is never delivered to a differently configured guild. Snapshots expire after 30 days by default and are also bounded to 100,000 records by default; retention changes apply to existing snapshots. Pending delivery records expire after seven days. Stored snapshot and delivery payloads are encrypted with AES-256-GCM using a dedicated operator-managed key; routing IDs and retention timestamps remain plaintext in SQLite so Kryten can expire and deliver records.
+
 ## Deletion and contact
 
 Use `/delete-data` in the Discord server to delete your complete encrypted
@@ -37,3 +43,4 @@ Kryten interaction record. Future qualifying activity can create a new record,
 and deleting greeting state may cause Kryten to greet you again. You may also
 privately contact the server moderation team through the server's established
 staff-contact method for privacy questions or deletion assistance.
+The `/delete-data` command covers interaction state, not staff moderation evidence; contact the moderation team for requests concerning lifecycle logs.

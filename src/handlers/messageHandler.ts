@@ -1,4 +1,4 @@
-import { Message, PartialMessage } from "discord.js";
+import { Message, PartialMessage, ReadonlyCollection } from "discord.js";
 import { KrytenClient } from "../classes/client";
 import { Feature } from "../features/feature";
 import { handleModPing } from "../features/moderation/modPing";
@@ -12,6 +12,7 @@ import { LlmClassifier } from "../llm/classifier";
 import { ClassificationLogger } from "../llm/classificationLogger";
 import { channelOrParentListed } from "../utils/channels";
 import { UserInteractionStore } from "../features/userInteractions/store";
+import { MessageLogger } from "../features/messageLogging/messageLogger";
 
 // Stateful handlers are built once; the registry is the single place to wire
 // features into the message pipeline.
@@ -23,10 +24,12 @@ let classificationLogger: ClassificationLogger | null = null;
 let betaClassifier: BetaClassifier | null = null;
 let betaResponder: BetaResponder | null = null;
 let userInteractions: UserInteractionStore | null = null;
+let messageLogger: MessageLogger | null = null;
 let features: Feature[] | null = null;
 
 function build(client: KrytenClient): void {
     crosspost = new CrosspostHandler(client);
+    messageLogger = new MessageLogger(client);
     imageFingerprint = new ImageFingerprintHandler(client);
     userInteractions = new UserInteractionStore(client);
     autoResponder = new AutoResponder(client, userInteractions);
@@ -36,6 +39,14 @@ function build(client: KrytenClient): void {
     betaResponder = new BetaResponder(client, userInteractions);
 
     features = [
+        {
+            name: "message-logging",
+            enabled: () => messageLogger!.isEnabled(),
+            onMessage: message => messageLogger!.capture(message),
+            onMessageUpdate: (oldMessage, newMessage) => messageLogger!.captureEdit(oldMessage, newMessage),
+            onMessageDelete: message => messageLogger!.captureDelete(message),
+            onMessageDeleteBulk: messages => messageLogger!.captureBulk(messages),
+        },
         {
             // Scam-image fingerprinting: known-bad matches are actioned here and
             // image crossposts raise a staff review. Runs before text crosspost so
@@ -92,7 +103,13 @@ function ensure(client: KrytenClient): Feature[] {
  */
 export async function initFeatures(client: KrytenClient): Promise<void> {
     ensure(client);
+    await messageLogger!.initialize();
     await userInteractions!.reconcileClassifierCampaigns();
+}
+
+export function getMessageLogger(client: KrytenClient): MessageLogger {
+    ensure(client);
+    return messageLogger!;
 }
 
 /** Crosspost handler accessor (used by the health endpoint for metrics). */
@@ -179,6 +196,65 @@ export async function handleMessageDelete(message: Message | PartialMessage, cli
             await client
                 .logError(
                     `Feature '${feature.name}' failed (onMessageDelete)`,
+                    error instanceof Error ? error : String(error),
+                )
+                .catch(() => undefined);
+        }
+    }
+}
+
+export async function handleMessageUpdate(
+    oldMessage: Message | PartialMessage,
+    newMessage: Message | PartialMessage,
+    client: KrytenClient,
+): Promise<void> {
+    if (client.configLoadFailed) return;
+    for (const feature of ensure(client)) {
+        if (!feature.onMessageUpdate) continue;
+        try {
+            if (feature.enabled && !feature.enabled(client)) continue;
+            await feature.onMessageUpdate(oldMessage, newMessage, client);
+        } catch (error) {
+            await client
+                .logError(
+                    `Feature '${feature.name}' failed (onMessageUpdate)`,
+                    error instanceof Error ? error : String(error),
+                )
+                .catch(() => undefined);
+        }
+    }
+}
+
+export async function handleMessageDeleteBulk(
+    messages: ReadonlyCollection<string, Message | PartialMessage>,
+    client: KrytenClient,
+): Promise<void> {
+    if (client.configLoadFailed) return;
+    for (const feature of ensure(client)) {
+        try {
+            if (feature.enabled && !feature.enabled(client)) continue;
+            if (feature.onMessageDeleteBulk) {
+                await feature.onMessageDeleteBulk(messages, client);
+            } else if (feature.onMessageDelete) {
+                // Per-message catch: one malformed entry in a 100-message purge
+                // must not skip the rest of that feature's cleanup.
+                for (const message of messages.values()) {
+                    try {
+                        await feature.onMessageDelete(message, client);
+                    } catch (error) {
+                        await client
+                            .logError(
+                                `Feature '${feature.name}' failed (onMessageDeleteBulk fallback)`,
+                                error instanceof Error ? error : String(error),
+                            )
+                            .catch(() => undefined);
+                    }
+                }
+            }
+        } catch (error) {
+            await client
+                .logError(
+                    `Feature '${feature.name}' failed (onMessageDeleteBulk)`,
                     error instanceof Error ? error : String(error),
                 )
                 .catch(() => undefined);

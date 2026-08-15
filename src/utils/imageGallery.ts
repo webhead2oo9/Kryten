@@ -27,7 +27,7 @@ const MAX_TOTAL_BYTES = 40 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 8_000;
 const DISCORD_EXTERNAL_IMAGE_HOST = /^images-ext-\d+\.discordapp\.net$/;
 
-interface ImageCandidate {
+export interface ImageCandidate {
     url: string;
     contentType: string | undefined;
 }
@@ -61,7 +61,7 @@ export function isAllowedDiscordMediaUrl(rawUrl: string): boolean {
     }
 }
 
-function collectImageCandidates(message: Message): ImageCandidate[] {
+export function collectImageCandidates(message: Message): ImageCandidate[] {
     const candidates: ImageCandidate[] = [];
     const seen = new Set<string>();
     const add = (url: string | null | undefined, contentType: string | null | undefined): void => {
@@ -108,14 +108,22 @@ async function downloadImage(
  * guild's size limit).
  */
 export async function buildImageGallery(message: Message, filenamePrefix = "image"): Promise<GalleryResult> {
-    const candidates = collectImageCandidates(message).slice(0, MAX_DOWNLOAD_ATTEMPTS);
+    return buildImageGalleryFromCandidates(collectImageCandidates(message), filenamePrefix);
+}
+
+export async function buildImageGalleryFromCandidates(
+    input: readonly ImageCandidate[],
+    filenamePrefix = "image",
+    maxFiles = MAX_GALLERY_IMAGES,
+): Promise<GalleryResult> {
+    const candidates = input.slice(0, MAX_DOWNLOAD_ATTEMPTS);
     if (candidates.length === 0) return { items: [], files: [] };
 
     const items: MediaGalleryItemBuilder[] = [];
     const files: AttachmentBuilder[] = [];
     let totalBytes = 0;
     for (const candidate of candidates) {
-        if (files.length >= MAX_GALLERY_IMAGES) break;
+        if (files.length >= Math.min(MAX_GALLERY_IMAGES, maxFiles)) break;
         const remainingBytes = MAX_TOTAL_BYTES - totalBytes;
         if (remainingBytes <= 0) break;
 

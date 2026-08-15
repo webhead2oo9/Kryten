@@ -5,6 +5,7 @@ import { ActionResult, deleteMessageById, kickMember, sendModAlert, timeoutMembe
 import { channelOrParentListed } from "../../utils/channels";
 import { AccentColor, renderFields } from "../../utils/cv2";
 import { messageAuthorHasExemptRole } from "../../utils/staff";
+import { markInternalMessageDelete } from "../messageLogging/messageLogger";
 import { Comparison, Fingerprint, SimilarityEngine, SimilarityThresholds } from "./similarity";
 
 /** Registry gate and settings() share this so the enabled default can't drift. */
@@ -384,14 +385,24 @@ export class CrosspostHandler {
         // Bail synchronously — just delete and count it as handled — so we don't
         // fire duplicate mod alerts or race two kicks on a repeat offender.
         if (this.burstInFlight.has(userId)) {
-            if (!s.dryRun) await message.delete().catch(() => undefined);
+            if (!s.dryRun) {
+                const clearDeleteMarker = markInternalMessageDelete(this.client, message.id, "crosspost burst cleanup");
+                await message.delete().catch(() => clearDeleteMarker());
+            }
             return true;
         }
         this.burstInFlight.add(userId);
         try {
             const existing = this.burstCooldowns.get(userId);
             if (existing && now - existing.handledAt < BURST_INCIDENT_COOLDOWN_SECONDS) {
-                if (!s.dryRun) await message.delete().catch(() => undefined);
+                if (!s.dryRun) {
+                    const clearDeleteMarker = markInternalMessageDelete(
+                        this.client,
+                        message.id,
+                        "crosspost burst cooldown cleanup",
+                    );
+                    await message.delete().catch(() => clearDeleteMarker());
+                }
                 return true;
             }
 
@@ -414,11 +425,15 @@ export class CrosspostHandler {
             for (const entry of matched) {
                 if (await deleteMessageById(this.client, entry.channelId, entry.messageId)) deleted++;
             }
+            const clearDeleteMarker = markInternalMessageDelete(this.client, message.id, "crosspost burst enforcement");
             if (
                 await message
                     .delete()
                     .then(() => true)
-                    .catch(() => false)
+                    .catch(() => {
+                        clearDeleteMarker();
+                        return false;
+                    })
             )
                 deleted++;
 

@@ -5,6 +5,7 @@ import type {
     CrosspostConfig,
     ImageFingerprintConfig,
     LlmClassifierConfig,
+    LoggingConfig,
     ModerationConfig,
     ModerationTimeoutConfig,
     ProposalsConfig,
@@ -696,6 +697,59 @@ function validateProposals(input: JsonObject, issues: string[]): ProposalsConfig
     return out;
 }
 
+function validateLogging(input: JsonObject, issues: string[]): LoggingConfig {
+    const out: LoggingConfig = {};
+    assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "logging.enabled", issues));
+    assignString(out, "guild_id", optionalString(input, "guild_id", "logging.guild_id", issues));
+    assignString(
+        out,
+        "default_channel_id",
+        optionalString(input, "default_channel_id", "logging.default_channel_id", issues),
+    );
+    assignString(
+        out,
+        "message_channel_id",
+        optionalString(input, "message_channel_id", "logging.message_channel_id", issues),
+    );
+    assignStringArray(
+        out,
+        "ignored_channel_ids",
+        optionalStringArray(input, "ignored_channel_ids", "logging.ignored_channel_ids", issues),
+    );
+    assignNumber(
+        out,
+        "retention_days",
+        optionalNumber(input, "retention_days", "logging.retention_days", issues, {
+            integer: true,
+            min: 1,
+            max: 365,
+        }),
+    );
+    assignNumber(
+        out,
+        "max_snapshots",
+        optionalNumber(input, "max_snapshots", "logging.max_snapshots", issues, {
+            integer: true,
+            min: 1_000,
+            max: 1_000_000,
+        }),
+    );
+    assignString(out, "db_path", optionalString(input, "db_path", "logging.db_path", issues));
+    assignString(
+        out,
+        "encryption_key_env",
+        optionalEnvironmentVariable(input, "encryption_key_env", "logging.encryption_key_env", issues),
+    );
+    assignBoolean(out, "rehost_images", optionalBoolean(input, "rehost_images", "logging.rehost_images", issues));
+    if (out.enabled) {
+        if (!out.guild_id) issues.push("logging.guild_id is required when enabled");
+        if (!out.default_channel_id && !out.message_channel_id) {
+            issues.push("logging.default_channel_id or logging.message_channel_id is required when enabled");
+        }
+    }
+    return out;
+}
+
 export function validateConfig(value: unknown): Config {
     const issues: string[] = [];
     if (!isRecord(value)) throw new ConfigValidationError(["config root must be an object"]);
@@ -732,6 +786,8 @@ export function validateConfig(value: unknown): Config {
     if (twitter) out.twitter = validateTwitter(twitter, issues);
     const proposals = optionalSection(value, "proposals", "proposals", issues);
     if (proposals) out.proposals = validateProposals(proposals, issues);
+    const logging = optionalSection(value, "logging", "logging", issues);
+    if (logging) out.logging = validateLogging(logging, issues);
 
     if (issues.length) throw new ConfigValidationError(issues);
     return out;

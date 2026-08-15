@@ -38,6 +38,16 @@ describe("validateConfig", () => {
                 ttl_hours: "12.5",
                 rate_limit_per_minute: "60",
             },
+            logging: {
+                enabled: "true",
+                guild_id: "guild",
+                message_channel_id: "message-log",
+                ignored_channel_ids: "ignored",
+                retention_days: "30",
+                max_snapshots: "100000",
+                encryption_key_env: "MESSAGE_LOG_ENCRYPTION_KEY",
+                rehost_images: "false",
+            },
             llm_classifier: {
                 enabled: "true",
                 provider: "fireworks",
@@ -81,6 +91,15 @@ describe("validateConfig", () => {
         expect(config.proposals?.max_pending).toBe(2);
         expect(config.proposals?.ttl_hours).toBe(12.5);
         expect(config.proposals?.rate_limit_per_minute).toBe(60);
+        expect(config.logging).toMatchObject({
+            enabled: true,
+            guild_id: "guild",
+            message_channel_id: "message-log",
+            ignored_channel_ids: ["ignored"],
+            retention_days: 30,
+            max_snapshots: 100_000,
+            rehost_images: false,
+        });
         expect(config.llm_classifier?.enabled).toBe(true);
         expect(config.llm_classifier?.timeout_ms).toBe(45_000);
         expect(config.llm_classifier?.max_concurrency).toBe(2);
@@ -118,6 +137,12 @@ describe("validateConfig", () => {
                 },
                 proposals: {
                     ttl_hours: 0,
+                },
+                logging: {
+                    enabled: true,
+                    retention_days: 0,
+                    max_snapshots: 10,
+                    encryption_key_env: "not-portable",
                 },
                 llm_classifier: {
                     enabled: true,
@@ -157,6 +182,12 @@ describe("validateConfig", () => {
                 proposals: {
                     ttl_hours: 0,
                 },
+                logging: {
+                    enabled: true,
+                    retention_days: 0,
+                    max_snapshots: 10,
+                    encryption_key_env: "not-portable",
+                },
                 llm_classifier: {
                     enabled: true,
                     provider: "arbitrary-provider",
@@ -184,6 +215,11 @@ describe("validateConfig", () => {
             expect(message).toContain("moderation.image_fingerprint.hub_base_url");
             expect(message).toContain("twitter.embed_service");
             expect(message).toContain("proposals.ttl_hours");
+            expect(message).toContain("logging.guild_id is required");
+            expect(message).toContain("logging.default_channel_id or logging.message_channel_id");
+            expect(message).toContain("logging.retention_days");
+            expect(message).toContain("logging.max_snapshots");
+            expect(message).toContain("logging.encryption_key_env");
             expect(message).toContain("llm_classifier.provider");
             expect(message).toContain("llm_classifier.model is required");
             expect(message).toContain("llm_classifier.api_key_env");

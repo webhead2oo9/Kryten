@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleMessage, handleMessageDelete } from "../src/handlers/messageHandler";
+import {
+    handleMessage,
+    handleMessageDelete,
+    handleMessageDeleteBulk,
+    handleMessageUpdate,
+} from "../src/handlers/messageHandler";
 import { KrytenClient } from "../src/classes/client";
 import { Message, PartialMessage } from "discord.js";
 
@@ -17,6 +22,10 @@ const H = vi.hoisted(() => ({
     betaRespond: vi.fn(),
     modPing: vi.fn(),
     twitter: vi.fn(),
+    logCapture: vi.fn(),
+    logEdit: vi.fn(),
+    logDelete: vi.fn(),
+    logBulk: vi.fn(),
 }));
 
 vi.mock("../src/features/imageFingerprint/imageFingerprintHandler", () => ({
@@ -63,8 +72,18 @@ vi.mock("../src/features/moderation/modPing", () => ({
 vi.mock("../src/features/twitter/twitterHandler", () => ({
     handleTwitterLinks: H.twitter,
 }));
+vi.mock("../src/features/messageLogging/messageLogger", () => ({
+    MessageLogger: class {
+        capture = H.logCapture;
+        captureEdit = H.logEdit;
+        captureDelete = H.logDelete;
+        captureBulk = H.logBulk;
+        isEnabled = () => true;
+    },
+}));
 
 const onMessageSpies = [
+    H.logCapture,
     H.imageProcess,
     H.modPing,
     H.betaProcess,
@@ -98,6 +117,7 @@ function fullConfig() {
             prompt_file: "/private/beta-prompt.json",
         },
         twitter: { enabled: true },
+        logging: { enabled: true },
     };
 }
 
@@ -242,6 +262,7 @@ describe("handleMessageDelete pipeline semantics", () => {
         const client = makeClient();
         await handleMessageDelete(deletedMessage(), client);
 
+        expect(H.logDelete).toHaveBeenCalledTimes(1);
         expect(H.crosspostDelete).toHaveBeenCalledTimes(1);
         for (const spy of onMessageSpies) expect(spy).not.toHaveBeenCalled();
     });
@@ -251,6 +272,7 @@ describe("handleMessageDelete pipeline semantics", () => {
         await handleMessageDelete(deletedMessage(), client);
 
         expect(H.crosspostDelete).not.toHaveBeenCalled();
+        expect(H.logDelete).not.toHaveBeenCalled();
     });
 
     it("skips an onMessageDelete feature whose enabled() gate returns false", async () => {
@@ -271,3 +293,49 @@ describe("handleMessageDelete pipeline semantics", () => {
         expect(client.logError).toHaveBeenCalledWith(expect.stringContaining("crosspost"), expect.any(Error));
     });
 });
+
+describe("message lifecycle pipeline hooks", () => {
+    it("dispatches message updates to the logging feature", async () => {
+        const client = makeClient();
+        const before = makeMessage({ content: "before" });
+        const after = makeMessage({ content: "after" });
+
+        await handleMessageUpdate(before, after, client);
+
+        expect(H.logEdit).toHaveBeenCalledWith(before, after);
+    });
+
+    it("groups logging for bulk deletes while preserving per-message legacy delete hooks", async () => {
+        const client = makeClient();
+        const first = deletedMessage("gone-1");
+        const second = deletedMessage("gone-2");
+        const messages = new Map([
+            [first.id, first],
+            [second.id, second],
+        ]) as never;
+
+        await handleMessageDeleteBulk(messages, client);
+
+        expect(H.logBulk).toHaveBeenCalledTimes(1);
+        expect(H.crosspostDelete).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps processing a bulk delete after one message throws in the legacy fallback", async () => {
+        H.crosspostDelete.mockRejectedValueOnce(new Error("bad partial"));
+        const client = makeClient();
+        const messages = new Map([
+            ["gone-1", deletedMessage("gone-1")],
+            ["gone-2", deletedMessage("gone-2")],
+            ["gone-3", deletedMessage("gone-3")],
+        ]) as never;
+
+        await handleMessageDeleteBulk(messages, client);
+
+        expect(H.crosspostDelete).toHaveBeenCalledTimes(3);
+        expect(client.logError).toHaveBeenCalledTimes(1);
+    });
+});
+
+function deletedMessage(id: string): PartialMessage {
+    return { id } as unknown as PartialMessage;
+}
