@@ -114,6 +114,28 @@ function result(
 }
 
 describe("BetaClassifier", () => {
+    it.each(["campaign_id", "campaign_started_at"] as const)(
+        "does not admit classifier work when %s is missing",
+        async missingField => {
+            const testClient = client();
+            delete testClient.config.beta_classifier![missingField];
+            const beginClassifierRun = vi.fn();
+            const classifyLazy = vi.fn();
+            const feature = new BetaClassifier(
+                testClient,
+                { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier,
+                auditLogger(),
+                interactionStore({ beginClassifierRun }),
+            );
+
+            await feature.process(discordMessage());
+            await feature.drain();
+
+            expect(beginClassifierRun).not.toHaveBeenCalled();
+            expect(classifyLazy).not.toHaveBeenCalled();
+        },
+    );
+
     it("submits an anonymous transcript, writes an audit result, and leaves responses disabled", async () => {
         const historical = discordMessage({
             id: "prior",
