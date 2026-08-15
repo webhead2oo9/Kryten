@@ -10,6 +10,7 @@
  */
 import { deepEqual } from "../utils/deepEqual";
 import { normalizeName } from "../utils/format";
+import { isRecord } from "../utils/isRecord";
 import { jsonClone } from "../utils/jsonClone";
 import { validateCustomCommandDetailed } from "../utils/validateCommand";
 
@@ -21,10 +22,6 @@ type Json = Record<string, unknown>;
 /** Keys whose string values count as user-visible text for replace_text. */
 const VISIBLE_TEXT_KEYS = new Set(["title", "description", "value", "name", "text", "url"]);
 const UNSAFE_PROPERTY_NAMES = new Set(["__proto__", "constructor", "prototype"]);
-
-function isObject(value: unknown): value is Json {
-    return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 // ------------------------------------------------------------------ targeting
 
@@ -55,7 +52,7 @@ function resolvePage(command: Json, pageRef: unknown): { page: Json; idx: number
     if (typeof pageRef === "number" && Number.isInteger(pageRef)) {
         const idx = indexOf(pageRef, pages.length, "page");
         const page = pages[idx];
-        if (!isObject(page)) throw new ProposalConflictError("target page is not a JSON object");
+        if (!isRecord(page)) throw new ProposalConflictError("target page is not a JSON object");
         return { page, idx };
     }
 
@@ -65,7 +62,7 @@ function resolvePage(command: Json, pageRef: unknown): { page: Json; idx: number
         .map((page, idx) => ({ page, idx }))
         .filter(
             ({ page }) =>
-                isObject(page) && (normalizeName(page["name"]) === target || normalizeName(page["title"]) === target),
+                isRecord(page) && (normalizeName(page["name"]) === target || normalizeName(page["title"]) === target),
         );
     if (matches.length === 0) throw new ProposalConflictError(`page '${String(pageRef)}' not found`);
     if (matches.length > 1) throw new ProposalConflictError(`page '${String(pageRef)}' is ambiguous`);
@@ -96,7 +93,7 @@ function resolveBlock(command: Json, target: Json): { blocks: Json[]; block: Jso
     if (typeof blockRef === "number" && Number.isInteger(blockRef)) {
         const idx = indexOf(blockRef, blocks.length, "block");
         const block = blocks[idx];
-        if (!isObject(block)) throw new ProposalConflictError("target block is not a JSON object");
+        if (!isRecord(block)) throw new ProposalConflictError("target block is not a JSON object");
         return { blocks, block, idx };
     }
 
@@ -106,7 +103,7 @@ function resolveBlock(command: Json, target: Json): { blocks: Json[]; block: Jso
     const matches = blocks
         .map((block, idx) => ({ block, idx }))
         .filter(
-            ({ block }) => isObject(block) && block["type"] === "field" && String(block["name"] ?? "") === targetName,
+            ({ block }) => isRecord(block) && block["type"] === "field" && String(block["name"] ?? "") === targetName,
         );
     if (matches.length === 0) throw new ProposalConflictError(`block '${targetName}' not found`);
     if (matches.length > 1) throw new ProposalConflictError(`block '${targetName}' is ambiguous`);
@@ -115,7 +112,7 @@ function resolveBlock(command: Json, target: Json): { blocks: Json[]; block: Jso
 
 function resolveObject(command: Json, target: unknown): Json {
     if (target === undefined || target === null) return command;
-    if (!isObject(target)) throw new ProposalValidationError("target must be an object");
+    if (!isRecord(target)) throw new ProposalValidationError("target must be an object");
     const kind = String(target["kind"] ?? "command")
         .trim()
         .toLowerCase();
@@ -127,7 +124,7 @@ function resolveObject(command: Json, target: unknown): Json {
 
 /** Walk all (container, key) slots holding user-visible text, recursively. */
 function* iterTextSlots(value: unknown): Generator<{ obj: Json; key: string; text: string }> {
-    if (isObject(value)) {
+    if (isRecord(value)) {
         for (const [key, child] of Object.entries(value)) {
             if (typeof child === "string" && VISIBLE_TEXT_KEYS.has(key)) {
                 yield { obj: value, key, text: child };
@@ -233,9 +230,9 @@ function insertItem(command: Json, edit: Json): void {
         .trim()
         .toLowerCase();
     const item = edit["item"];
-    if (!isObject(item)) throw new ProposalValidationError("insert_item requires object item");
+    if (!isRecord(item)) throw new ProposalValidationError("insert_item requires object item");
     const target = edit["target"] ?? { kind: "command" };
-    if (!isObject(target)) throw new ProposalValidationError("target must be an object");
+    if (!isRecord(target)) throw new ProposalValidationError("target must be an object");
 
     if (itemType === "page") {
         let pages = command["pages"];
@@ -261,7 +258,7 @@ function insertItem(command: Json, edit: Json): void {
 function removeItem(command: Json, edit: Json): void {
     if (!("old" in edit)) throw new ProposalValidationError("remove_item requires old guard");
     const target = edit["target"];
-    if (!isObject(target)) throw new ProposalValidationError("remove_item requires target");
+    if (!isRecord(target)) throw new ProposalValidationError("remove_item requires target");
     const kind = String(target["kind"] ?? "")
         .trim()
         .toLowerCase();
@@ -285,7 +282,7 @@ function removeItem(command: Json, edit: Json): void {
 
 function moveItem(command: Json, edit: Json): void {
     const target = edit["target"];
-    if (!isObject(target)) throw new ProposalValidationError("move_item requires target");
+    if (!isRecord(target)) throw new ProposalValidationError("move_item requires target");
     const kind = String(target["kind"] ?? "")
         .trim()
         .toLowerCase();
@@ -317,14 +314,14 @@ function moveItem(command: Json, edit: Json): void {
  * an invalid result raises ProposalValidationError.
  */
 export function applyPatchEdits(command: unknown, edits: unknown): Json {
-    if (!isObject(command)) throw new ProposalValidationError("patch target command must be a JSON object");
+    if (!isRecord(command)) throw new ProposalValidationError("patch target command must be a JSON object");
     if (!Array.isArray(edits) || edits.length === 0) {
         throw new ProposalValidationError("patch requires a non-empty edits array");
     }
 
     const patched = jsonClone(command);
     edits.forEach((rawEdit, index) => {
-        if (!isObject(rawEdit)) throw new ProposalValidationError(`edit ${index} must be an object`);
+        if (!isRecord(rawEdit)) throw new ProposalValidationError(`edit ${index} must be an object`);
         const editType = String(rawEdit["type"] ?? "")
             .trim()
             .toLowerCase();
@@ -358,9 +355,9 @@ export function summarizePatchEdits(edits: unknown, limit = 6): string | null {
     if (!Array.isArray(edits) || edits.length === 0) return null;
     const lines: string[] = [];
     for (const edit of edits.slice(0, limit)) {
-        if (!isObject(edit)) continue;
+        if (!isRecord(edit)) continue;
         const editType = String(edit["type"] ?? "edit");
-        const target = isObject(edit["target"]) ? (edit["target"] as Json) : {};
+        const target = isRecord(edit["target"]) ? (edit["target"] as Json) : {};
         const targetBits: string[] = [];
         if (target["page"] !== undefined && target["page"] !== null)
             targetBits.push(`page \`${String(target["page"])}\``);

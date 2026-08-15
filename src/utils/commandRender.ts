@@ -31,7 +31,6 @@ import { clampText } from "./format";
  * backstop.
  */
 
-export { CV2_TEXT_BUDGET };
 // A truncated fragment shorter than this reads as noise — drop the part instead.
 const MIN_PART_CHARS = 20;
 // Discord: a Section holds 1-3 TextDisplay children.

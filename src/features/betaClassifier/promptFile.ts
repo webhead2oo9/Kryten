@@ -1,4 +1,5 @@
 import { open } from "node:fs/promises";
+import { isRecord } from "../../utils/isRecord";
 
 const MAX_PROMPT_BYTES = 128 * 1024;
 
@@ -11,7 +12,7 @@ export async function loadBetaClassifierPrompt(path: string): Promise<BetaClassi
     const contents = await readPromptFile(path);
 
     const parsed = JSON.parse(contents) as unknown;
-    if (!isObject(parsed)) throw new Error("beta classifier prompt file must contain an object");
+    if (!isRecord(parsed)) throw new Error("beta classifier prompt file must contain an object");
 
     const version = typeof parsed["version"] === "string" ? parsed["version"].trim() : "";
     const systemInstruction =
@@ -45,8 +46,4 @@ async function readPromptFile(path: string): Promise<string> {
     } finally {
         await file.close();
     }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "fs";
 import { chmod, mkdir, rename, writeFile } from "fs/promises";
 import { dirname } from "path";
 import type { KrytenClient } from "../../classes/client";
-import { decryptJson, encryptJson, isEncryptedJsonEnvelope, isRecord, keyFromEnv } from "../../utils/encryptedJson";
+import { decryptJson, encryptJson, isEncryptedJsonEnvelope, keyFromEnv } from "../../utils/encryptedJson";
+import { isRecord } from "../../utils/isRecord";
 
 const DEFAULT_STORE_PATH = "./data/user_interactions.json";
 const DEFAULT_KEY_ENV = "USER_INTERACTIONS_ENCRYPTION_KEY";

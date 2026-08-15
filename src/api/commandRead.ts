@@ -17,7 +17,8 @@
 import { IncomingMessage, ServerResponse } from "http";
 import type { KrytenClient } from "../classes/client";
 import type { CommandBlock, Commands, CustomCommand } from "../types";
-import { ApiAccessFailure, checkApiAccess } from "./proposalIntake";
+import { checkApiAccess } from "./proposalIntake";
+import type { ApiAccessFailure } from "./proposalIntake";
 
 export const COMMANDS_READ_PATH = "/api/v1/commands";
 

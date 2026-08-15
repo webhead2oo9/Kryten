@@ -25,19 +25,25 @@ export const MAX_SELECT_VALUE = 100;
 export const MAX_EMBED_FIELD_VALUE = 1024;
 
 /**
+ * Ellipsize text to a hard length bound. Guards the non-positive edges: with
+ * max <= 0 the naive slice(0, max - 1) would drop only the last char and still
+ * overflow the bound.
+ */
+export function ellipsize(text: string, max: number): string {
+    if (text.length <= max) return text;
+    if (max <= 0) return "";
+    if (max === 1) return "…";
+    return `${text.slice(0, max - 1)}…`;
+}
+
+/**
  * Clamp text to a length bound, substituting a fallback when empty. Discord
  * rejects over-long payloads (1024-char embed fields, ~4000 chars total across
  * a Components-V2 message), and message content can reach 2000-4000 chars — an
  * alert built from raw content would otherwise fail (suppressing the alert).
  */
 export function clampText(text: string, max = MAX_EMBED_FIELD_VALUE, fallback = "No content"): string {
-    const value = text || fallback;
-    if (value.length <= max) return value;
-    // Guard the non-positive edges like cv2's fitText: with max <= 0 the slice
-    // (`slice(0, -1)`) would drop only the last char and still overflow the bound.
-    if (max <= 0) return "";
-    if (max === 1) return "…";
-    return `${value.slice(0, max - 1)}…`;
+    return ellipsize(text || fallback, max);
 }
 
 /** Clamp text to Discord's 1024-char embed-field limit. */

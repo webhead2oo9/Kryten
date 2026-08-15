@@ -10,6 +10,7 @@ import type {
     ProposalsConfig,
     TwitterConfig,
 } from "../types";
+import { isRecord } from "../utils/isRecord";
 
 type JsonObject = Record<string, unknown>;
 type NumberOptions = { integer?: boolean; min?: number; max?: number };
@@ -53,14 +54,10 @@ function optionalEnvironmentVariable(
     return undefined;
 }
 
-function isObject(value: unknown): value is JsonObject {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function optionalSection(parent: JsonObject, key: string, path: string, issues: string[]): JsonObject | undefined {
     const value = parent[key];
     if (value === undefined) return undefined;
-    if (!isObject(value)) {
+    if (!isRecord(value)) {
         issues.push(`${path} must be an object`);
         return undefined;
     }
@@ -701,7 +698,7 @@ function validateProposals(input: JsonObject, issues: string[]): ProposalsConfig
 
 export function validateConfig(value: unknown): Config {
     const issues: string[] = [];
-    if (!isObject(value)) throw new ConfigValidationError(["config root must be an object"]);
+    if (!isRecord(value)) throw new ConfigValidationError(["config root must be an object"]);
 
     const out: Config = {};
     assignStringArray(out, "staff_roles", optionalStringArray(value, "staff_roles", "staff_roles", issues));

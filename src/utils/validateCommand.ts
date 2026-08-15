@@ -1,5 +1,6 @@
 import { CV2_MEDIA_GALLERY_ITEM_BUDGET, CV2_TEXT_BUDGET } from "./cv2";
 import { NAME_PATTERN } from "./format";
+import { isRecord } from "./isRecord";
 
 // Block (format 2) limits — must stay in lockstep with the commands repo's
 // commands.schema.json + validate-schema.js and the renderer in commandRender.ts.
@@ -17,10 +18,6 @@ const MAX_ACCENT_COLOR = 0xffffff;
 const MAX_COMMAND_PAGES = 25;
 const UNIT_TEXT_HEADROOM = 200;
 const UNIT_TEXT_BUDGET = CV2_TEXT_BUDGET - UNIT_TEXT_HEADROOM;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Discord only accepts http(s) links in embeds; anything else 400s the message. */
 export function isValidEmbedUrl(value: unknown): value is string {

@@ -17,6 +17,7 @@ import {
     SeparatorBuilder,
     TextDisplayBuilder,
 } from "discord.js";
+import { ellipsize } from "./format";
 
 /** Discord's cap on total TextDisplay characters per CV2 message. */
 export const CV2_TEXT_BUDGET = 4000;
@@ -89,12 +90,9 @@ function messageTextChars(components: readonly APIMessageTopLevelComponent[]): n
     return components.reduce((sum, component) => sum + topLevelTextChars(component), 0);
 }
 
+/** Truncate to a text budget, capped at Discord's total CV2 message budget. */
 function fitText(text: string, maxChars: number): string {
-    const max = Math.max(0, Math.min(maxChars, CV2_TEXT_BUDGET));
-    if (text.length <= max) return text;
-    if (max <= 0) return "";
-    if (max === 1) return "…";
-    return `${text.slice(0, max - 1)}…`;
+    return ellipsize(text, Math.max(0, Math.min(maxChars, CV2_TEXT_BUDGET)));
 }
 
 function trimTextDisplay(display: { content: string }, excessChars: number): number {

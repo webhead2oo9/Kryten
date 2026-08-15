@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { isRecord } from "./isRecord";
 
 const ENVELOPE_VERSION = 1;
 const ALGORITHM = "aes-256-gcm";
@@ -14,15 +15,11 @@ export interface EncryptedJsonEnvelope {
     ciphertext: string;
 }
 
-export class EncryptionKeyError extends Error {
+class EncryptionKeyError extends Error {
     constructor(message: string) {
         super(message);
         this.name = "EncryptionKeyError";
     }
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function base64WithoutPadding(value: Buffer): string {
