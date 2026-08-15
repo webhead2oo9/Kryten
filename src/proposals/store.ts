@@ -164,7 +164,7 @@ export class ProposalStore {
         return row ? rowToRecord(row) : null;
     }
 
-    private expireStaleStmt(now: number): number {
+    private runExpireStale(now: number): number {
         return this.db
             .prepare(
                 `UPDATE command_proposals
@@ -175,7 +175,7 @@ export class ProposalStore {
     }
 
     expireStale(): number {
-        return this.expireStaleStmt(Date.now());
+        return this.runExpireStale(Date.now());
     }
 
     /**
@@ -220,7 +220,7 @@ export class ProposalStore {
     claimForResolution(proposalId: string): ProposalRecord | null {
         const claim = this.db.transaction((id: string): ProposalRecord | null => {
             const now = Date.now();
-            this.expireStaleStmt(now);
+            this.runExpireStale(now);
             const info = this.db
                 .prepare(
                     `UPDATE command_proposals
@@ -272,7 +272,7 @@ export class ProposalStore {
     markRejected(proposalId: string, resolvedBy: string, note?: string): ProposalRecord | null {
         const reject = this.db.transaction((id: string): ProposalRecord | null => {
             const now = Date.now();
-            this.expireStaleStmt(now);
+            this.runExpireStale(now);
             const info = this.db
                 .prepare(
                     `UPDATE command_proposals

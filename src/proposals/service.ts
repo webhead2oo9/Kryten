@@ -164,15 +164,21 @@ export class ProposalService {
         }
 
         let operation = rawOperation as ProposalOperation | "edit";
-        const edits = input.edits;
         if (operation === "edit") {
             if (input.command !== undefined && input.command !== null) {
                 return { status: "invalid", message: FULL_BODY_EDIT_UNSUPPORTED };
             }
-            if (!Array.isArray(edits) || edits.length === 0) {
-                return { status: "invalid", message: "edit proposals require a non-empty 'edits' array" };
-            }
             operation = "patch";
+        }
+        // One check covers both spellings (edit is normalized to patch above);
+        // the message keeps the caller's original operation word.
+        let patchEdits: unknown[] | undefined;
+        if (operation === "patch") {
+            const edits = input.edits;
+            if (!Array.isArray(edits) || edits.length === 0) {
+                return { status: "invalid", message: `${rawOperation} proposals require a non-empty 'edits' array` };
+            }
+            patchEdits = edits;
         }
 
         // 3. Per-operation validation + live-corpus conflict checks.
@@ -207,9 +213,7 @@ export class ProposalService {
                 return { status: "conflict", message: `command '${name}' does not exist` };
             }
             if (operation === "patch") {
-                if (!Array.isArray(edits) || edits.length === 0) {
-                    return { status: "invalid", message: "patch proposals require a non-empty 'edits' array" };
-                }
+                const edits = patchEdits!; // validated non-empty when operation became patch
                 // The pre-apply below proves the edits fit the live file. When
                 // running from the snapshot the stored bodies are normalized
                 // approximations of the real files, so exact-match guards

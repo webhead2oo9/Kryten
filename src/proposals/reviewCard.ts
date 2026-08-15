@@ -20,7 +20,7 @@ import {
     renderFields,
 } from "../utils/cv2";
 import { embedFieldValue } from "../utils/format";
-import { summarizePatchEdits } from "./patchEngine";
+import { getPages, summarizePatchEdits } from "./patchEngine";
 import { ProposalRecord } from "./types";
 
 export const PROPOSAL_BUTTON_PREFIX = "cmdprop:";
@@ -55,16 +55,12 @@ export interface ReviewMessageOptions {
     proposedBy?: string;
 }
 
-function commandPages(command: Record<string, unknown>): Record<string, unknown>[] {
-    return Array.isArray(command["pages"]) ? (command["pages"] as Record<string, unknown>[]) : [];
-}
-
 function structureSummary(command: Record<string, unknown> | undefined): string {
     if (!command) return "n/a";
     // Count via the same resolver the preview renders with, so the metadata
     // line can't disagree with what's actually shown below.
     const blocks = Array.isArray(command["blocks"]) ? command["blocks"].length : 0;
-    const pages = commandPages(command);
+    const pages = getPages(command);
     const parts = [
         `${blocks} top-level block${blocks === 1 ? "" : "s"}`,
         `${pages.length} page${pages.length === 1 ? "" : "s"}`,
@@ -98,7 +94,7 @@ function buildMetadataContainer(
     if (record.operation !== "delete" && record.proposedCommand) {
         const hasTopLevel =
             Array.isArray(record.proposedCommand["blocks"]) && record.proposedCommand["blocks"].length > 0;
-        const hasPages = commandPages(record.proposedCommand).length > 0;
+        const hasPages = getPages(record.proposedCommand).length > 0;
         if (!hasTopLevel && hasPages) {
             fields.push({
                 name: "⚠️ Initial response",
@@ -177,7 +173,7 @@ export function buildReviewMessages(record: ProposalRecord, options: ReviewMessa
     if (record.operation !== "delete" && record.proposedCommand) {
         const command = record.proposedCommand;
         if (pushUnit(command, undefined, command["accent_color"])) {
-            for (const page of commandPages(command)) {
+            for (const page of getPages(command)) {
                 const pageTitle = String(page["title"] ?? page["name"] ?? "?");
                 if (!pushUnit(page, `📑 Page preview: ${pageTitle.slice(0, 120)}`, command["accent_color"])) {
                     break;

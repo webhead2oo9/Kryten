@@ -45,8 +45,35 @@ export function apiKeyRateLimited(presented: string, limitPerMinute: number): bo
     return rateLimited(sha256(presented).toString("hex").slice(0, 12), limitPerMinute);
 }
 
+export interface ApiAccessFailure {
+    http: number;
+    status: "unavailable" | "unauthorized" | "rate_limited";
+    message: string;
+}
+
+/**
+ * The shared 503/401/429 guard for the proposal intake and the command-read
+ * API: service configured, constant-time key check, then the shared per-key
+ * rate budget (single default, defined once here). Messages follow the intake
+ * contract; the read side overrides wording for its own { error } contract.
+ */
+export function checkApiAccess(client: KrytenClient, presented: unknown): ApiAccessFailure | null {
+    const apiKey = process.env["PROPOSAL_API_KEY"];
+    if (!client.proposalService || !apiKey) {
+        return { http: 503, status: "unavailable", message: "Command proposals are not available" };
+    }
+    if (typeof presented !== "string" || !keyMatches(presented, apiKey)) {
+        return { http: 401, status: "unauthorized", message: "Invalid or missing X-API-Key" };
+    }
+    const limit = client.config.proposals?.rate_limit_per_minute ?? DEFAULT_RATE_LIMIT_PER_MINUTE;
+    if (apiKeyRateLimited(presented, limit)) {
+        return { http: 429, status: "rate_limited", message: "Rate limit exceeded" };
+    }
+    return null;
+}
+
 /** The one place the response contract lives: { status, message, proposal_id }. */
-function respond(
+function respondStatus(
     res: ServerResponse,
     http: number,
     status: string,
@@ -72,7 +99,7 @@ function rejectAndClose(
     status: string,
     message: string,
 ): void {
-    respond(res, http, status, message);
+    respondStatus(res, http, status, message);
     if (res.writableFinished) req.destroy();
     else res.once("finish", () => req.destroy());
 }
@@ -90,24 +117,13 @@ function rateLimited(keyFingerprint: string, limitPerMinute: number): boolean {
 }
 
 export function handleProposalIntake(client: KrytenClient, req: IncomingMessage, res: ServerResponse): void {
-    const service = client.proposalService;
-    const apiKey = process.env["PROPOSAL_API_KEY"];
-    if (!service || !apiKey) {
-        rejectAndClose(req, res, 503, "unavailable", "Command proposals are not available");
+    const failure = checkApiAccess(client, req.headers["x-api-key"]);
+    if (failure) {
+        rejectAndClose(req, res, failure.http, failure.status, failure.message);
         return;
     }
-
-    const presented = req.headers["x-api-key"];
-    if (typeof presented !== "string" || !keyMatches(presented, apiKey)) {
-        rejectAndClose(req, res, 401, "unauthorized", "Invalid or missing X-API-Key");
-        return;
-    }
-
-    const limit = client.config.proposals?.rate_limit_per_minute ?? DEFAULT_RATE_LIMIT_PER_MINUTE;
-    if (apiKeyRateLimited(presented, limit)) {
-        rejectAndClose(req, res, 429, "rate_limited", "Rate limit exceeded");
-        return;
-    }
+    // checkApiAccess only passes when the service is configured.
+    const service = client.proposalService!;
 
     const chunks: Buffer[] = [];
     let received = 0;
@@ -128,11 +144,11 @@ export function handleProposalIntake(client: KrytenClient, req: IncomingMessage,
         try {
             payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         } catch {
-            respond(res, 400, "invalid", "Body must be valid JSON");
+            respondStatus(res, 400, "invalid", "Body must be valid JSON");
             return;
         }
         if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-            respond(res, 400, "invalid", "Body must be a JSON object");
+            respondStatus(res, 400, "invalid", "Body must be a JSON object");
             return;
         }
         const body = payload as Record<string, unknown>;
@@ -147,16 +163,22 @@ export function handleProposalIntake(client: KrytenClient, req: IncomingMessage,
                 proposer: body["proposer"],
             })
             .then(result => {
-                respond(res, STATUS_TO_HTTP[result.status], result.status, result.message, result.proposalId ?? null);
+                respondStatus(
+                    res,
+                    STATUS_TO_HTTP[result.status],
+                    result.status,
+                    result.message,
+                    result.proposalId ?? null,
+                );
             })
             .catch(error => {
                 console.error("Proposal intake failed:", error);
-                respond(res, 500, "error", "Internal error");
+                respondStatus(res, 500, "error", "Internal error");
             });
     });
     req.on("error", () => {
         if (!res.headersSent) {
-            respond(res, 400, "invalid", "Request stream error");
+            respondStatus(res, 400, "invalid", "Request stream error");
         }
     });
 }

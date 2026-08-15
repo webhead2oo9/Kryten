@@ -17,11 +17,10 @@
 import { IncomingMessage, ServerResponse } from "http";
 import type { KrytenClient } from "../classes/client";
 import type { CommandBlock, Commands, CustomCommand } from "../types";
-import { apiKeyRateLimited, keyMatches } from "./proposalIntake";
+import { ApiAccessFailure, checkApiAccess } from "./proposalIntake";
 
 export const COMMANDS_READ_PATH = "/api/v1/commands";
 
-const DEFAULT_RATE_LIMIT_PER_MINUTE = 100;
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 50;
 const DEFAULT_MIN_SCORE = 45;
@@ -289,7 +288,7 @@ export function searchPayload(
     return { query, count: results.length, results };
 }
 
-function respond(res: ServerResponse, http: number, payload: Record<string, unknown>): void {
+function respondJson(res: ServerResponse, http: number, payload: Record<string, unknown>): void {
     if (res.headersSent || res.writableEnded) return;
     res.writeHead(http, { "Content-Type": "application/json" });
     res.end(JSON.stringify(payload));
@@ -302,20 +301,15 @@ function boundedInt(raw: string | null, fallback: number, minimum: number, maxim
 }
 
 export function handleCommandRead(client: KrytenClient, req: IncomingMessage, res: ServerResponse, url: URL): void {
-    const service = client.proposalService;
-    const apiKey = process.env["PROPOSAL_API_KEY"];
-    if (!service || !apiKey) {
-        respond(res, 503, { error: "Command knowledge is not available" });
-        return;
-    }
-    const presented = req.headers["x-api-key"];
-    if (typeof presented !== "string" || !keyMatches(presented, apiKey)) {
-        respond(res, 401, { error: "Invalid or missing API key" });
-        return;
-    }
-    const limit = client.config.proposals?.rate_limit_per_minute ?? DEFAULT_RATE_LIMIT_PER_MINUTE;
-    if (apiKeyRateLimited(presented, limit)) {
-        respond(res, 429, { error: "Rate limit exceeded" });
+    const failure = checkApiAccess(client, req.headers["x-api-key"]);
+    if (failure) {
+        // The read side's { error } contract uses its own wording for the shared failures.
+        const messages: Record<ApiAccessFailure["status"], string> = {
+            unavailable: "Command knowledge is not available",
+            unauthorized: "Invalid or missing API key",
+            rate_limited: "Rate limit exceeded",
+        };
+        respondJson(res, failure.http, { error: messages[failure.status] });
         return;
     }
 
@@ -323,7 +317,7 @@ export function handleCommandRead(client: KrytenClient, req: IncomingMessage, re
     const getRaw: RawBodyLookup = name => client.commandSync.getRawBody(name);
 
     if (url.pathname === COMMANDS_READ_PATH) {
-        respond(res, 200, listPayload(commands, getRaw, url.searchParams.get("detail") ?? "summary"));
+        respondJson(res, 200, listPayload(commands, getRaw, url.searchParams.get("detail") ?? "summary"));
         return;
     }
     // Only treat /search as the search endpoint when a query is actually present.
@@ -336,20 +330,20 @@ export function handleCommandRead(client: KrytenClient, req: IncomingMessage, re
     ) {
         const query = (url.searchParams.get("q") ?? url.searchParams.get("query") ?? "").trim();
         if (!query) {
-            respond(res, 400, { error: "Query parameter 'q' is required" });
+            respondJson(res, 400, { error: "Query parameter 'q' is required" });
             return;
         }
         if (query.length > MAX_SEARCH_QUERY_CHARS) {
-            respond(res, 400, { error: `Query is too long (max ${MAX_SEARCH_QUERY_CHARS} characters)` });
+            respondJson(res, 400, { error: `Query is too long (max ${MAX_SEARCH_QUERY_CHARS} characters)` });
             return;
         }
         if (tokenize(query).length > MAX_SEARCH_QUERY_TOKENS) {
-            respond(res, 400, { error: `Query has too many terms (max ${MAX_SEARCH_QUERY_TOKENS})` });
+            respondJson(res, 400, { error: `Query has too many terms (max ${MAX_SEARCH_QUERY_TOKENS})` });
             return;
         }
         const searchLimit = boundedInt(url.searchParams.get("limit"), DEFAULT_SEARCH_LIMIT, 1, MAX_SEARCH_LIMIT);
         const minScore = boundedInt(url.searchParams.get("min_score"), DEFAULT_MIN_SCORE, 0, 100);
-        respond(res, 200, searchPayload(commands, getRaw, query, searchLimit, minScore));
+        respondJson(res, 200, searchPayload(commands, getRaw, query, searchLimit, minScore));
         return;
     }
 
@@ -357,13 +351,13 @@ export function handleCommandRead(client: KrytenClient, req: IncomingMessage, re
     try {
         name = decodeURIComponent(url.pathname.slice(`${COMMANDS_READ_PATH}/`.length));
     } catch {
-        respond(res, 404, { error: "Command not found" });
+        respondJson(res, 404, { error: "Command not found" });
         return;
     }
     const payload = getPayload(commands, getRaw, name);
     if (!payload) {
-        respond(res, 404, { error: `Command '${name}' not found` });
+        respondJson(res, 404, { error: `Command '${name}' not found` });
         return;
     }
-    respond(res, 200, payload);
+    respondJson(res, 200, payload);
 }

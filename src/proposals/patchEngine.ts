@@ -45,7 +45,7 @@ function indexOf(value: unknown, length: number, label: string): number {
     return value;
 }
 
-function getPages(command: Json): Json[] {
+export function getPages(command: Json): Json[] {
     const pages = command["pages"];
     return Array.isArray(pages) ? (pages as Json[]) : [];
 }
