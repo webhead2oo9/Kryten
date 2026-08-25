@@ -12,13 +12,13 @@ describe("betaCandidateDecision", () => {
         "VD via USB has huge latency spikes, is that expected?",
         "Quest headset wired mode is not detected by my PC.",
         "Why does my link cable keep disconnecting in Virtual Desktop?",
+        "Where do I download the Beta Streamer?",
         "How do I switch to the Beta release channel for USB mode?",
     ];
 
     const ignores = [
         "Why does 1.34.20 only show Wi-Fi?",
         "Where is the beta?",
-        "Where do I download the Beta Streamer?",
         "The VD stream freezes every 12 minutes on my Quest 3.",
         "Can I use 100 fps in the Virtual Desktop beta?",
         "How do I install the beta from the phone app?",

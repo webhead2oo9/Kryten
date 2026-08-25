@@ -8,6 +8,7 @@ const SUPPORT_INTENT =
 const VD_CONTEXT = /\b(?:virtual desktop|vd|streamer|headset app)\b/i;
 const USB_MODE = /\b(?:usb(?:\s+ncm)?|ncm|wired|cabled|link cable|on cable|via cable|over cable)\b/i;
 const USB_KEYWORD = /\b(?:beta\s+usb\s+setup|usb\s+cable)\b/i;
+const BETA_STREAMER = /\bbeta\s+streamer\b/i;
 const CONNECTION_OR_PERFORMANCE =
     /\b(?:connect(?:ion|ed|ing)?|detect(?:ed|ing)?|recogniz(?:e|ed|ing)|show(?:s|ing)?|tag|mode|wired|wi-?fi|stream(?:ing)?|disconnect(?:ion)?s?|disconnected|disconnecting|drops?|freez(?:e|es|ing)|frozen|stutter(?:s|ing)?|crash(?:es|ed|ing)?|latency|lag|bitrate|black screen|unreachable|restart(?:s|ed|ing)?)\b/i;
 const FIFTEEN_MINUTE = /\b(?:(?:15|fifteen)\s*(?:min(?:ute)?s?)|quarter\s+hour)\b/i;
@@ -53,5 +54,6 @@ export function betaCandidateDecision(text: string): CandidateDecision {
     if (directUsb) reasons.push("direct-usb-context");
     if (usbKeyword) reasons.push("usb-keyword");
     if (usbBetaSetup) reasons.push("usb-beta-setup");
+    if (BETA_STREAMER.test(normalized)) reasons.push("beta-streamer");
     return { candidate: reasons.length > 0, reasons };
 }
