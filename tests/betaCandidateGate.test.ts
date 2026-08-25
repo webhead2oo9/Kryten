@@ -11,6 +11,7 @@ describe("betaCandidateDecision", () => {
         "Also getting disconnections on cabled.",
         "VD via USB has huge latency spikes, is that expected?",
         "Quest headset wired mode is not detected by my PC.",
+        "Why does my link cable keep disconnecting in Virtual Desktop?",
         "How do I switch to the Beta release channel for USB mode?",
     ];
 
