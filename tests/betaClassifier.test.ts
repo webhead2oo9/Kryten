@@ -50,7 +50,7 @@ function discordMessage(overrides: Record<string, unknown> = {}): Message {
         id: "target",
         guildId: "guild",
         channelId: "support",
-        content: "Why does 1.34.20 only show Wi-Fi?",
+        content: "Why does VD via USB keep disconnecting?",
         createdTimestamp: 2,
         author: { id: "author", bot: false },
         member: { roles: { cache: { some: () => false } } },
@@ -339,11 +339,8 @@ describe("BetaClassifier", () => {
         await feature.drain();
 
         expect(message.reply).toHaveBeenCalledWith({
-            content: expect.stringContaining("<#beta>"),
-            allowedMentions: { parse: [], repliedUser: false },
-        });
-        expect(message.reply).toHaveBeenCalledWith({
-            content: expect.stringContaining("https://discord.com/channels/guild/channel/message"),
+            content:
+                "Direct USB support and the 15-minute stream restart are still in Beta. To opt in, switch Virtual Desktop on your Quest to the BETA release channel; a separate Beta Streamer installation is no longer required. Please continue in <#beta>.\nhttps://discord.com/channels/guild/channel/message",
             allowedMentions: { parse: [], repliedUser: false },
         });
         expect(feature.getMetrics()).toMatchObject({ responseEnabled: true, responsesSent: 1, responseFailures: 0 });
@@ -538,7 +535,7 @@ describe("BetaClassifier", () => {
         const feature = new BetaClassifier(client(), classifier, auditLogger(), interactionStore());
         const relevantParent = discordMessage({
             id: "parent",
-            content: "Why does 1.34.20 only show Wi-Fi?",
+            content: "Why does VD via USB keep disconnecting?",
             createdTimestamp: 1,
         });
         const message = discordMessage({
@@ -551,7 +548,7 @@ describe("BetaClassifier", () => {
         await feature.drain();
 
         expect(message.fetchReference).toHaveBeenCalledTimes(1);
-        expect(request!.input).toContain("Why does 1.34.20 only show Wi-Fi?");
+        expect(request!.input).toContain("Why does VD via USB keep disconnecting?");
         expect(request!.input).toContain("same here");
     });
 
@@ -566,7 +563,7 @@ describe("BetaClassifier", () => {
         const crossChannelParent = discordMessage({
             id: "parent",
             channelId: "other-channel",
-            content: "Why does 1.34.20 only show Wi-Fi?",
+            content: "Why does VD via USB keep disconnecting?",
             createdTimestamp: 1,
         });
         const message = discordMessage({

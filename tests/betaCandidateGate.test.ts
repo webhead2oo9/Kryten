@@ -3,24 +3,26 @@ import { betaCandidateDecision } from "../src/features/betaClassifier/candidateG
 
 describe("betaCandidateDecision", () => {
     const routes = [
-        "Why does 1.34.20 only show Wi-Fi and no USB tag?",
         "How do I do the beta USB setup?",
-        "Does the USB cable work?",
-        "Where is the beta?",
-        "Where do I download the Beta Streamer?",
         "USB NCM is missing from the adapter list, can anyone help?",
-        "The VD stream freezes every 12 minutes on my Quest 3.",
+        "The VD stream freezes every 15 minutes on my Quest 3.",
+        "The stream goes black about every fifteen minutes, is that expected?",
+        "Why does the stream restart every quarter hour?",
         "Also getting disconnections on cabled.",
         "VD via USB has huge latency spikes, is that expected?",
         "Quest headset wired mode is not detected by my PC.",
+        "How do I switch to the Beta release channel for USB mode?",
+    ];
+
+    const ignores = [
+        "Why does 1.34.20 only show Wi-Fi?",
+        "Where is the beta?",
+        "Where do I download the Beta Streamer?",
+        "The VD stream freezes every 12 minutes on my Quest 3.",
         "Can I use 100 fps in the Virtual Desktop beta?",
         "How do I install the beta from the phone app?",
         "I am still on 1.34.18 after switching to beta.",
         "The beta release channel spinner is stuck forever.",
-    ];
-
-    const ignores = [
-        "Why does 1.34.19 only show Wi-Fi and no USB tag?",
         "I use a cable; how do I start a flight simulator in VR?",
         "The beta USB connection and my new cable work perfectly.",
         "My USB flight stick is not detected by my game, can someone help?",

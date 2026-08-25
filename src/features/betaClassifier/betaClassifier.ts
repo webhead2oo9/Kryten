@@ -233,7 +233,7 @@ export class BetaClassifier {
             ) {
                 try {
                     await message.reply({
-                        content: `This looks related to the current Quest beta. Please continue in <#${acceptedConfig.target_channel_id}> and make sure both the headset Beta channel and Beta Streamer are installed.\n${acceptedConfig.announcement_url}`,
+                        content: `Direct USB support and the 15-minute stream restart are still in Beta. To opt in, switch Virtual Desktop on your Quest to the BETA release channel; a separate Beta Streamer installation is no longer required. Please continue in <#${acceptedConfig.target_channel_id}>.\n${acceptedConfig.announcement_url}`,
                         allowedMentions: { parse: [], repliedUser: false },
                     });
                     this.metrics.responsesSent++;

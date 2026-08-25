@@ -27,8 +27,10 @@ describe("BetaResponder", () => {
         expect(payload).not.toHaveProperty("embeds");
         expect(payload?.content).toContain("<@user-1>");
         expect(payload?.content).toContain("<#announcements-1>");
-        expect(payload?.content).toContain("VirtualDesktop.Streamer.Setup.exe");
-        expect(setCampaignGreeting).toHaveBeenCalledWith("user-1", "beta", { campaignId: "quest-beta" }, 3);
+        expect(payload?.content).toBe(
+            "Welcome, <@user-1>! Direct USB support and the 15-minute stream restart are still in Beta. To opt in, switch Virtual Desktop on your Quest to the **BETA** release channel; a separate Beta Streamer installation is no longer required. For the latest information, check <#announcements-1>.",
+        );
+        expect(setCampaignGreeting).toHaveBeenCalledWith("user-1", "beta", { campaignId: "direct-usb-beta-v1" }, 3);
 
         await vi.advanceTimersByTimeAsync(44_999);
         expect(deleted).not.toHaveBeenCalled();
@@ -40,7 +42,7 @@ describe("BetaResponder", () => {
         const send = vi.fn();
         const interactions = {
             getCampaignGreeting: vi.fn(async () => ({
-                record: { campaignId: "quest-beta" },
+                record: { campaignId: "direct-usb-beta-v1" },
                 generation: 0,
             })),
             setCampaignGreeting: vi.fn(),
@@ -62,7 +64,7 @@ function makeClient(): KrytenClient {
                 target_greeting_delete_after_seconds: 45,
                 announcements_channel_id: "announcements-1",
                 target_channel_id: "beta-1",
-                campaign_id: "quest-beta",
+                campaign_id: "direct-usb-beta-v1",
                 campaign_started_at: "2026-08-12T05:00:00.000Z",
             },
         },

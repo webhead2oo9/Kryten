@@ -7,7 +7,6 @@ import {
     type UserInteractionStore,
 } from "../userInteractions/store";
 
-const WINDOWS_STREAMER_URL = "https://download.vrdesktop.net/files/beta/VirtualDesktop.Streamer.Setup.exe";
 const DEFAULT_DELETE_AFTER_SECONDS = 45;
 
 export class BetaResponder {
@@ -34,9 +33,9 @@ export class BetaResponder {
         try {
             const greeting = await (message.channel as TextChannel).send({
                 content:
-                    `Welcome, <@${userId}>! Please complete both beta setup steps: install the ` +
-                    `[Beta Streamer](${WINDOWS_STREAMER_URL}) on your computer and set Virtual Desktop on your Quest ` +
-                    `to the **BETA** release channel. For the latest information, check ` +
+                    `Welcome, <@${userId}>! Direct USB support and the 15-minute stream restart are still in Beta. ` +
+                    `To opt in, switch Virtual Desktop on your Quest to the **BETA** release channel; a separate ` +
+                    `Beta Streamer installation is no longer required. For the latest information, check ` +
                     `<#${config.announcements_channel_id}>.`,
                 allowedMentions: { parse: [], users: [userId] },
             });
