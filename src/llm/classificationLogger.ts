@@ -8,6 +8,10 @@ export interface ClassificationLoggerMetrics {
     failures: number;
 }
 
+export interface ClassificationLogOptions {
+    includeRawOutput?: boolean;
+}
+
 const STATUS_NAMES: Record<ClassificationStatus, string> = {
     ok: "OK",
     disabled: "Disabled",
@@ -36,6 +40,7 @@ export class ClassificationLogger {
         message: Message,
         result: ClassificationResult<Label>,
         isAuthorized: () => boolean = () => true,
+        options: ClassificationLogOptions = {},
     ): Promise<void> {
         const config = this.client.config.llm_classifier;
         const channelId = config?.classification_log_channel_id;
@@ -62,7 +67,7 @@ export class ClassificationLogger {
                     { name: "Source", value: `[Open message](${message.url})` },
                 );
 
-            if (failed && result.providerFailure?.rawOutput) {
+            if (failed && result.providerFailure?.rawOutput && options.includeRawOutput !== false) {
                 embed.addFields({ name: "Raw output", value: rawOutputField(result.providerFailure.rawOutput) });
             }
 

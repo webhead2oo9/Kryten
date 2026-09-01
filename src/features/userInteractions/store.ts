@@ -89,9 +89,10 @@ export class UserInteractionStore {
     }
 
     async getGreeting(userId: string): Promise<GreetingSnapshot> {
+        const generation = this.generation(userId);
         return this.exclusive(() => ({
             record: greetingRecord(this.records.get(userId)),
-            generation: this.generation(userId),
+            generation,
         }));
     }
 
@@ -108,9 +109,10 @@ export class UserInteractionStore {
     }
 
     async getCampaignGreeting(userId: string, greetingId: string): Promise<CampaignGreetingSnapshot> {
+        const generation = this.generation(userId);
         return this.exclusive(() => ({
             record: campaignGreetingRecord(this.records.get(userId), greetingId),
-            generation: this.generation(userId),
+            generation,
         }));
     }
 
@@ -133,8 +135,14 @@ export class UserInteractionStore {
         });
     }
 
+    isUserGeneration(userId: string, generation: number): boolean {
+        return this.generation(userId) === generation;
+    }
+
     async beginClassifierRun(userId: string, campaign: ClassifierCampaign): Promise<ClassifierAdmission> {
+        const generation = this.generation(userId);
         return this.exclusive(() => {
+            if (this.generation(userId) !== generation) return { status: "busy" };
             if (!classifierCampaignIsActive(campaign)) return { status: "expired" };
             const key = classifierRunKey(campaign.classifierId, userId);
             if (this.inFlight.has(key)) return { status: "busy" };
@@ -147,7 +155,7 @@ export class UserInteractionStore {
                 userId,
                 classifierId: campaign.classifierId,
                 campaignId: campaign.campaignId,
-                generation: this.generation(userId),
+                generation,
             };
             this.inFlight.set(key, run);
             return { status: "acquired", run };
@@ -206,11 +214,11 @@ export class UserInteractionStore {
     }
 
     async deleteUser(userId: string): Promise<boolean> {
+        this.assertDeletable();
+        const hadInFlight = [...this.inFlight.values()].some(run => run.userId === userId);
+        this.generations.set(userId, this.generation(userId) + 1);
         return this.exclusive(async () => {
-            this.assertDeletable();
             const existed = this.records.has(userId) || this.legacyRecords.has(userId);
-            const hadInFlight = [...this.inFlight.values()].some(run => run.userId === userId);
-            this.generations.set(userId, this.generation(userId) + 1);
             for (const [key, run] of this.inFlight) {
                 if (run.userId === userId) this.inFlight.delete(key);
             }

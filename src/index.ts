@@ -5,6 +5,7 @@ import { KrytenClient } from "./classes/client";
 import {
     getAutoResponder,
     getBetaClassifier,
+    getBetaResponder,
     getImageFingerprintHandler,
     handleMessage,
     handleMessageDelete,
@@ -14,6 +15,7 @@ import { handleInteraction } from "./handlers/interactionRouter";
 import { drainPendingSync } from "./handlers/editorHandler";
 import { startHealthServer } from "./health";
 import { ensureProposalService } from "./handlers/proposalHandler";
+import { stopBetaFeatures } from "./shutdown/betaFeatures";
 
 loadEnv();
 
@@ -192,18 +194,11 @@ async function shutdown(signal: string): Promise<void> {
         client.proposalService?.stop();
         getImageFingerprintHandler(client).stop();
         const betaClassifier = getBetaClassifier(client);
-        betaClassifier.stop();
+        const betaResponder = getBetaResponder(client);
         healthServer?.close();
-        // Destroy the client BEFORE flushing the greeter: the gateway stops
-        // delivering messages, so a greeting completing mid-shutdown can't
-        // queue a save behind the flush and lose it to process.exit.
-        await client.destroy();
-        await Promise.race([
-            betaClassifier.drain(),
-            new Promise<void>(resolve => {
-                setTimeout(resolve, 5000).unref();
-            }),
-        ]);
+        // Keep Discord REST authentication available for bounded greeting
+        // deletion retries, then stop the gateway before flushing state.
+        await stopBetaFeatures(betaClassifier, betaResponder, () => client.destroy(), 5_000);
         // Flush debounced interaction state before the unref'd timer dies.
         await Promise.race([
             getAutoResponder(client).flushNow(),

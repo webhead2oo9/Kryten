@@ -87,6 +87,30 @@ describe("ClassificationLogger", () => {
         expect(raw).not.toContain(fireworksToken);
     });
 
+    it("omits raw provider output when the caller disables it", async () => {
+        const { client, message, send } = setup();
+        const logger = new ClassificationLogger(client);
+
+        await logger.log(
+            message,
+            result({
+                status: "http_error",
+                providerFailure: {
+                    provider: "fireworks",
+                    code: "http_error",
+                    summary: "Provider error",
+                    rawOutput: "reflected private request",
+                },
+            }),
+            () => true,
+            { includeRawOutput: false },
+        );
+
+        const serialized = JSON.stringify(send.mock.calls[0]?.[0]);
+        expect(serialized).not.toContain("Raw output");
+        expect(serialized).not.toContain("reflected private request");
+    });
+
     it("does nothing when no channel is configured or authorization is revoked", async () => {
         const { client, message, fetch, send } = setup();
         const logger = new ClassificationLogger(client);
