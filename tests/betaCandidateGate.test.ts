@@ -12,6 +12,8 @@ describe("betaCandidateDecision", () => {
         "VD via USB has huge latency spikes, is that expected?",
         "Quest headset wired mode is not detected by my PC.",
         "Why does my link cable keep disconnecting in Virtual Desktop?",
+        "Why does VD via USB disconnect when Ethernet is connected?",
+        "How do I use direct USB with Ethernet?",
         "Where do I download the Beta Streamer?",
         "How do I switch to the Beta release channel for USB mode?",
     ];
@@ -32,6 +34,7 @@ describe("betaCandidateDecision", () => {
         "The SteamVR beta crashes whenever I open a game.",
         "Which cable should I buy to charge my Quest?",
         "Why does VD disconnect on Wi-Fi?",
+        "Why does my PC restart every 15 minutes?",
         "Why is the Quest OS beta option missing?",
     ];
 

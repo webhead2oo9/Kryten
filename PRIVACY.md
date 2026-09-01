@@ -10,6 +10,13 @@ When a message matches a classifier's local candidate rules, Kryten may retrieve
 
 Sanitized text is sent to Fireworks AI for inference. Fireworks states that its open-model inference APIs do not persist prompts or generations unless the customer explicitly opts in, although request metadata is logged and prompts may remain briefly in volatile prompt caches. Kryten does not opt in to prompt logging and does not send a Fireworks end-user identifier. See [Fireworks' data-handling documentation](https://docs.fireworks.ai/guides/security_compliance/data_handling).
 
+When beta-greeting retention is enabled, Kryten may send the triggering message
+and at most one same-user follow-up message from the greeting's deletion window
+through the same sanitization and inference path. Only an affirmative, timely
+classification retains Kryten's greeting. Provider failures, uncertain or late
+results, configuration changes, and deletion requests do not retain it. This path
+does not include provider raw output in staff classification logs.
+
 Discord messages are not retained as training, fine-tuning, evaluation, or cross-classifier datasets. Kryten does not use Discord content to train an AI model.
 
 ## Stored interaction data

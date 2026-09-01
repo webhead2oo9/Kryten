@@ -33,7 +33,7 @@ function build(client: KrytenClient): void {
     llmClassifier = new LlmClassifier(() => client.config.llm_classifier);
     classificationLogger = new ClassificationLogger(client);
     betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger, userInteractions);
-    betaResponder = new BetaResponder(client, userInteractions);
+    betaResponder = new BetaResponder(client, userInteractions, llmClassifier, classificationLogger);
 
     features = [
         {
@@ -126,6 +126,11 @@ export function getClassificationLogger(client: KrytenClient): ClassificationLog
 export function getBetaClassifier(client: KrytenClient): BetaClassifier {
     ensure(client);
     return betaClassifier!;
+}
+
+export function getBetaResponder(client: KrytenClient): BetaResponder {
+    ensure(client);
+    return betaResponder!;
 }
 
 export function getUserInteractionStore(client: KrytenClient): UserInteractionStore {

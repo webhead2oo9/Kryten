@@ -3,6 +3,7 @@ import { Status } from "discord.js";
 import { KrytenClient } from "./classes/client";
 import {
     getBetaClassifier,
+    getBetaResponder,
     getClassificationLogger,
     getCrosspostHandler,
     getImageFingerprintHandler,
@@ -57,6 +58,7 @@ export function startHealthServer(client: KrytenClient, port: number): Server {
                         llmClassifier: getLlmClassifier(client).getMetrics(),
                         classificationLogger: getClassificationLogger(client).getMetrics(),
                         betaClassifier: getBetaClassifier(client).getMetrics(),
+                        betaResponder: getBetaResponder(client).getMetrics(),
                     },
                     errors: {
                         recent: client.errorCount,

@@ -548,6 +548,16 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         "target_greeting_enabled",
         optionalBoolean(input, "target_greeting_enabled", "beta_classifier.target_greeting_enabled", issues),
     );
+    assignBoolean(
+        out,
+        "target_greeting_retention_enabled",
+        optionalBoolean(
+            input,
+            "target_greeting_retention_enabled",
+            "beta_classifier.target_greeting_retention_enabled",
+            issues,
+        ),
+    );
     assignNumber(
         out,
         "target_greeting_delete_after_seconds",
@@ -558,6 +568,11 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
             issues,
             { integer: true, min: 5, max: 3_600 },
         ),
+    );
+    assignString(
+        out,
+        "target_greeting_prompt_file",
+        optionalString(input, "target_greeting_prompt_file", "beta_classifier.target_greeting_prompt_file", issues),
     );
     assignString(
         out,
@@ -641,6 +656,14 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         }
         if (!out.campaign_started_at) {
             issues.push("beta_classifier.campaign_started_at is required when target greeting is enabled");
+        }
+    }
+    if (out.target_greeting_retention_enabled) {
+        if (!out.target_greeting_enabled) {
+            issues.push("beta_classifier target greeting must be enabled when greeting retention is enabled");
+        }
+        if (!out.target_greeting_prompt_file) {
+            issues.push("beta_classifier.target_greeting_prompt_file is required when greeting retention is enabled");
         }
     }
     return out;
@@ -728,6 +751,9 @@ export function validateConfig(value: unknown): Config {
     if (llmClassifier) out.llm_classifier = validateLlmClassifier(llmClassifier, issues);
     const betaClassifier = optionalSection(value, "beta_classifier", "beta_classifier", issues);
     if (betaClassifier) out.beta_classifier = validateBetaClassifier(betaClassifier, issues);
+    if (out.beta_classifier?.target_greeting_retention_enabled && !out.llm_classifier?.enabled) {
+        issues.push("llm_classifier.enabled is required when beta greeting retention is enabled");
+    }
     const twitter = optionalSection(value, "twitter", "twitter", issues);
     if (twitter) out.twitter = validateTwitter(twitter, issues);
     const proposals = optionalSection(value, "proposals", "proposals", issues);

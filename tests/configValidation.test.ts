@@ -52,7 +52,9 @@ describe("validateConfig", () => {
                 enabled: "true",
                 response_enabled: "false",
                 target_greeting_enabled: "true",
+                target_greeting_retention_enabled: "true",
                 target_greeting_delete_after_seconds: "45",
+                target_greeting_prompt_file: "/private/beta-greeting-prompt.json",
                 announcements_channel_id: "announcements",
                 guild_id: "guild",
                 campaign_id: "synthetic-beta",
@@ -92,7 +94,9 @@ describe("validateConfig", () => {
         expect(config.beta_classifier?.campaign_id).toBe("synthetic-beta");
         expect(config.beta_classifier?.response_enabled).toBe(false);
         expect(config.beta_classifier?.target_greeting_enabled).toBe(true);
+        expect(config.beta_classifier?.target_greeting_retention_enabled).toBe(true);
         expect(config.beta_classifier?.target_greeting_delete_after_seconds).toBe(45);
+        expect(config.beta_classifier?.target_greeting_prompt_file).toBe("/private/beta-greeting-prompt.json");
         expect(config.beta_classifier?.announcements_channel_id).toBe("announcements");
         expect(config.beta_classifier?.prompt_file).toBe("/private/beta-prompt.json");
         expect(config.beta_classifier?.max_context_messages).toBe(25);
@@ -196,6 +200,32 @@ describe("validateConfig", () => {
             expect(message).toContain("beta_classifier.max_context_messages");
             expect(message).toContain("beta_classifier.prompt_file is required");
         }
+    });
+
+    it("requires a configured target greeting and prompt when greeting retention is enabled", () => {
+        expect(() =>
+            validateConfig({
+                beta_classifier: {
+                    target_greeting_retention_enabled: true,
+                },
+            }),
+        ).toThrowError(/target greeting must be enabled.*target_greeting_prompt_file/s);
+    });
+
+    it("requires the shared LLM classifier when greeting retention is enabled", () => {
+        expect(() =>
+            validateConfig({
+                beta_classifier: {
+                    target_greeting_enabled: true,
+                    target_greeting_retention_enabled: true,
+                    target_greeting_prompt_file: "/private/beta-greeting-prompt.json",
+                    announcements_channel_id: "announcements",
+                    target_channel_id: "beta",
+                    campaign_id: "campaign",
+                    campaign_started_at: "2026-08-05T16:01:00.000Z",
+                },
+            }),
+        ).toThrowError(/llm_classifier.enabled/);
     });
 
     it("rejects the removed beta watched-channel field", () => {

@@ -52,6 +52,13 @@ See [PRIVACY.md](PRIVACY.md) for Kryten's data handling, retention, and deletion
    | `githubBranch` | Branch to read and commit commands on. |
    | `error_log_channel_id` | Optional Discord channel to receive error report cards. |
 
+The optional beta greeting can use an LLM during its configured deletion window
+to retain only greetings that are relevant to the active campaign. Enable it with
+`beta_classifier.target_greeting_retention_enabled` and provide a private prompt
+file through `target_greeting_prompt_file`. The normal greeting remains separately
+controlled by `target_greeting_enabled`; disabling retention restores unconditional
+timed deletion. See `template.config.json` for the complete configuration shape.
+
 5. **Run the bot**
    ```bash
    # Development (TypeScript in-place)

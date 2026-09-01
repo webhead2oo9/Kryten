@@ -251,6 +251,47 @@ describe("UserInteractionStore", () => {
         await vi.waitFor(() => expect(readStore(storePath, key)).toEqual({}), { timeout: 1_000, interval: 10 });
     });
 
+    it("does not reauthorize a campaign snapshot queued before deletion", async () => {
+        const store = new UserInteractionStore(testClient);
+        let releaseOperation!: () => void;
+        const blockedOperation = new Promise<void>(resolve => {
+            releaseOperation = resolve;
+        });
+        (store as unknown as { operationChain: Promise<void> }).operationChain = blockedOperation;
+
+        const snapshotPromise = store.getCampaignGreeting("42", BETA_GREETING_ID);
+        const deletion = store.deleteUser("42");
+        releaseOperation();
+        const snapshot = await snapshotPromise;
+
+        expect(store.isUserGeneration("42", snapshot.generation)).toBe(false);
+        await expect(
+            store.setCampaignGreeting(
+                "42",
+                BETA_GREETING_ID,
+                { campaignId: "synthetic-beta" },
+                snapshot.generation,
+            ),
+        ).resolves.toBe(false);
+        await expect(deletion).resolves.toBe(false);
+    });
+
+    it("revokes a user generation immediately when deletion is requested", async () => {
+        const store = new UserInteractionStore(testClient);
+        const snapshot = await store.getCampaignGreeting("42", BETA_GREETING_ID);
+        let releaseOperation!: () => void;
+        const blockedOperation = new Promise<void>(resolve => {
+            releaseOperation = resolve;
+        });
+        (store as unknown as { operationChain: Promise<void> }).operationChain = blockedOperation;
+
+        const deletion = store.deleteUser("42");
+
+        expect(store.isUserGeneration("42", snapshot.generation)).toBe(false);
+        releaseOperation();
+        await expect(deletion).resolves.toBe(false);
+    });
+
     it("deletion removes all user state and cancels an in-flight write", async () => {
         const store = new UserInteractionStore(testClient);
         const snapshot = await store.getGreeting("42");

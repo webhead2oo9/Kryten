@@ -29,19 +29,24 @@ export function betaCandidateDecision(text: string): CandidateDecision {
     const ncm = /\b(?:usb\s+ncm|ncm)\b/i.test(normalized);
     const connectionIssue = CONNECTION_OR_PERFORMANCE.test(normalized);
     const usbMode = USB_MODE.test(normalized);
+    const explicitDirectUsb = /\bdirect\s+usb\b/i.test(normalized);
     const vdContext = VD_CONTEXT.test(normalized);
     const headsetContext = /\b(?:quest|headset|pc)\b/i.test(normalized);
     const terseCabledIssue =
         /\b(?:on cabled|on cable|cabled|wired|via usb|over usb)\b/i.test(normalized) && connectionIssue;
-    const directUsb = usbMode && connectionIssue && (vdContext || headsetContext || terseCabledIssue);
+    const directUsb =
+        explicitDirectUsb || (usbMode && connectionIssue && (vdContext || headsetContext || terseCabledIssue));
     const usbKeyword = USB_KEYWORD.test(normalized);
     const usbBetaSetup =
         /\bbeta\b/i.test(normalized) &&
         /\busb\b/i.test(normalized) &&
         /\b(?:install|download|update|switch|select|find|option|channel|setup)\w*/i.test(normalized);
-    const fifteenMinuteRestart = FIFTEEN_MINUTE.test(normalized) && FIFTEEN_MINUTE_EFFECT.test(normalized);
+    const fifteenMinuteRestart =
+        FIFTEEN_MINUTE.test(normalized) &&
+        FIFTEEN_MINUTE_EFFECT.test(normalized) &&
+        (vdContext || usbMode || /\b(?:quest|headset|stream(?:ing)?)\b/i.test(normalized));
 
-    if (NETWORK_ONLY.test(normalized) && !ncm) return { candidate: false, reasons: ["network-only"] };
+    if (NETWORK_ONLY.test(normalized) && !ncm && !directUsb) return { candidate: false, reasons: ["network-only"] };
     if (LINK_ONLY.test(normalized) && !vdContext) return { candidate: false, reasons: ["meta-link-only"] };
     if (PERIPHERAL.test(normalized)) return { candidate: false, reasons: ["peripheral"] };
     if (CHARGING_OR_SHOPPING.test(normalized) && !connectionIssue) {

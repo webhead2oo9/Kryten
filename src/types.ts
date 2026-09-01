@@ -128,7 +128,9 @@ export interface BetaClassifierConfig extends ClassifierScopeConfig {
     enabled?: boolean;
     response_enabled?: boolean;
     target_greeting_enabled?: boolean;
+    target_greeting_retention_enabled?: boolean;
     target_greeting_delete_after_seconds?: number;
+    target_greeting_prompt_file?: string;
     announcements_channel_id?: string;
     guild_id?: string;
     campaign_id?: string;
