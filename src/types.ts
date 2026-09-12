@@ -157,7 +157,13 @@ export interface ProposalsConfig {
     db_path?: string; // SQLite path (default ./data/proposals.db)
 }
 
+export interface StickyPostsConfig {
+    enabled: boolean;
+    channels: Record<string, { interval_messages: number; embed: import("discord.js").APIEmbed }>;
+}
+
 export interface Config {
+    sticky_posts?: StickyPostsConfig;
     staff_roles?: string[];
     githubRepoOwner?: string; // e.g., "webhead2oo9"
     githubRepoName?: string; // e.g., "VirtualDesktopCommands"

@@ -371,8 +371,7 @@ export class ImageFingerprintStore {
             )
             .run(now, rowId);
         const row = this.db.prepare("SELECT hit_count FROM known_bad_image_fingerprints WHERE id = ?").get(rowId) as
-            | { hit_count: number }
-            | undefined;
+            { hit_count: number } | undefined;
         if (!row) return null;
 
         // Callers decide whether dry-run detections should count as shared
@@ -628,8 +627,7 @@ export class ImageFingerprintStore {
 
     private readWatermark(): number {
         const row = this.db.prepare("SELECT last_sync_seq FROM fingerprint_hub_sync_state WHERE id = 1").get() as
-            | { last_sync_seq: number }
-            | undefined;
+            { last_sync_seq: number } | undefined;
         return row ? row.last_sync_seq : 0;
     }
 

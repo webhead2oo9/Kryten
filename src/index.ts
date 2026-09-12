@@ -7,6 +7,7 @@ import {
     getBetaClassifier,
     getBetaResponder,
     getImageFingerprintHandler,
+    getStickyPosts,
     handleMessage,
     handleMessageDelete,
     initFeatures,
@@ -192,6 +193,7 @@ async function shutdown(signal: string): Promise<void> {
     try {
         client.poller.stop();
         client.proposalService?.stop();
+        await getStickyPosts(client).stop(5_000);
         getImageFingerprintHandler(client).stop();
         const betaClassifier = getBetaClassifier(client);
         const betaResponder = getBetaResponder(client);

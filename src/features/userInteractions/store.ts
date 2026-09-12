@@ -38,8 +38,7 @@ export interface ClassifierRun {
 }
 
 export type ClassifierAdmission =
-    | { status: "acquired"; run: ClassifierRun }
-    | { status: "already_routed" | "busy" | "expired" };
+    { status: "acquired"; run: ClassifierRun } | { status: "already_routed" | "busy" | "expired" };
 
 interface StoredClassifierRecord {
     campaignId: string;
