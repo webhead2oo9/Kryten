@@ -28,13 +28,7 @@ export interface ProposalRecord {
 }
 
 export type SubmitStatus =
-    | "staged"
-    | "duplicate"
-    | "too_many_pending"
-    | "invalid"
-    | "conflict"
-    | "unavailable"
-    | "error";
+    "staged" | "duplicate" | "too_many_pending" | "invalid" | "conflict" | "unavailable" | "error";
 
 export interface SubmitResult {
     status: SubmitStatus;

@@ -134,8 +134,7 @@ export class ProposalStore {
 
     get(proposalId: string): ProposalRecord | null {
         const row = this.db.prepare("SELECT * FROM command_proposals WHERE proposal_id = ?").get(proposalId) as
-            | Row
-            | undefined;
+            Row | undefined;
         return row ? rowToRecord(row) : null;
     }
 
