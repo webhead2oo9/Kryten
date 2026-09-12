@@ -12,6 +12,7 @@ import { LlmClassifier } from "../llm/classifier";
 import { ClassificationLogger } from "../llm/classificationLogger";
 import { channelOrParentListed } from "../utils/channels";
 import { UserInteractionStore } from "../features/userInteractions/store";
+import { StickyPosts } from "../features/stickyPosts/handler";
 
 // Stateful handlers are built once; the registry is the single place to wire
 // features into the message pipeline.
@@ -24,8 +25,10 @@ let betaClassifier: BetaClassifier | null = null;
 let betaResponder: BetaResponder | null = null;
 let userInteractions: UserInteractionStore | null = null;
 let features: Feature[] | null = null;
+let stickyPosts: StickyPosts | null = null;
 
 function build(client: KrytenClient): void {
+    stickyPosts = new StickyPosts(client);
     crosspost = new CrosspostHandler(client);
     imageFingerprint = new ImageFingerprintHandler(client);
     userInteractions = new UserInteractionStore(client);
@@ -76,6 +79,11 @@ function build(client: KrytenClient): void {
             name: "twitter",
             enabled: c => !!c.config.twitter?.enabled,
             onMessage: (message, c) => handleTwitterLinks(message, c),
+        },
+        {
+            name: "sticky-posts",
+            enabled: c => c.config.sticky_posts?.enabled ?? false,
+            onMessage: message => stickyPosts!.process(message),
         },
     ];
 }
@@ -136,6 +144,11 @@ export function getBetaResponder(client: KrytenClient): BetaResponder {
 export function getUserInteractionStore(client: KrytenClient): UserInteractionStore {
     ensure(client);
     return userInteractions!;
+}
+
+export function getStickyPosts(client: KrytenClient): StickyPosts {
+    ensure(client);
+    return stickyPosts!;
 }
 
 /**

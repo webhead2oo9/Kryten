@@ -10,6 +10,7 @@ import type {
     ProposalsConfig,
     TwitterConfig,
 } from "../types";
+import { validateStickyPosts } from "./stickyPosts";
 import { isRecord } from "../utils/isRecord";
 
 type JsonObject = Record<string, unknown>;
@@ -724,6 +725,13 @@ export function validateConfig(value: unknown): Config {
     if (!isRecord(value)) throw new ConfigValidationError(["config root must be an object"]);
 
     const out: Config = {};
+    if (value["sticky_posts"] !== undefined) {
+        try {
+            out.sticky_posts = validateStickyPosts(value["sticky_posts"]);
+        } catch {
+            issues.push("sticky_posts must contain valid channel entries and embeds");
+        }
+    }
     assignStringArray(out, "staff_roles", optionalStringArray(value, "staff_roles", "staff_roles", issues));
     assignString(out, "githubRepoOwner", optionalString(value, "githubRepoOwner", "githubRepoOwner", issues));
     assignString(out, "githubRepoName", optionalString(value, "githubRepoName", "githubRepoName", issues));

@@ -9,6 +9,7 @@ const H = vi.hoisted(() => ({
 
 vi.mock("../src/handlers/messageHandler", () => ({
     getUserInteractionStore: () => ({ reconcileClassifierCampaigns: H.reconcile }),
+    getStickyPosts: () => ({ reload: vi.fn(async () => undefined) }),
 }));
 vi.mock("../src/handlers/proposalHandler", () => ({ ensureProposalService: H.ensureProposalService }));
 
@@ -28,7 +29,7 @@ describe("/reload_config interaction retention", () => {
         expect(H.reconcile).toHaveBeenCalledTimes(1);
         expect(context.client.poller.start).toHaveBeenCalledTimes(1);
         expect(H.ensureProposalService).toHaveBeenCalledWith(context.client);
-        expect(context.interaction.reply).toHaveBeenCalledWith(
+        expect(context.interaction.editReply).toHaveBeenCalledWith(
             expect.objectContaining({ content: expect.stringContaining("interaction retention") }),
         );
     });
@@ -46,7 +47,7 @@ describe("/reload_config interaction retention", () => {
         expect(context.client.config).toBe(previous);
         expect(context.client.poller.start).not.toHaveBeenCalled();
         expect(H.ensureProposalService).not.toHaveBeenCalled();
-        expect(context.interaction.reply).toHaveBeenCalledWith(
+        expect(context.interaction.editReply).toHaveBeenCalledWith(
             expect.objectContaining({ content: expect.stringContaining("synthetic disk failure") }),
         );
     });
@@ -63,6 +64,6 @@ function commandContext(previous: Config, next: Config): CommandContext {
     };
     return {
         client,
-        interaction: { reply: vi.fn(async () => undefined) },
+        interaction: { deferReply: vi.fn(async () => undefined), editReply: vi.fn(async () => undefined) },
     } as unknown as CommandContext;
 }

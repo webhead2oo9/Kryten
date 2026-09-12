@@ -1,4 +1,8 @@
 {
+    "sticky_posts": {
+        "enabled": false,
+        "channels": {}
+    },
     "staff_roles": [
         "YOUR_STAFF_ROLE_ID_HERE"
     ],

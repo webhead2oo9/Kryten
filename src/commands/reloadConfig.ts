@@ -2,7 +2,7 @@ import { SlashCommandBuilder } from "discord.js";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
 import { ensureProposalService } from "../handlers/proposalHandler";
-import { getUserInteractionStore } from "../handlers/messageHandler";
+import { getStickyPosts, getUserInteractionStore } from "../handlers/messageHandler";
 
 const command_data = new SlashCommandBuilder()
     .setName("reload_config")
@@ -19,6 +19,7 @@ export default class extends Command {
     }
 
     override async run(ctx: CommandContext): Promise<any> {
+        await ctx.interaction.deferReply({ ephemeral: true });
         const previousConfig = ctx.client.config;
         const previousLoadFailed = ctx.client.configLoadFailed;
         try {
@@ -27,9 +28,8 @@ export default class extends Command {
         } catch (error) {
             ctx.client.config = previousConfig;
             ctx.client.configLoadFailed = previousLoadFailed;
-            return ctx.interaction.reply({
+            return ctx.interaction.editReply({
                 content: `Failed to reload config: ${error instanceof Error ? error.message : String(error)}`,
-                ephemeral: true,
             });
         }
 
@@ -39,9 +39,20 @@ export default class extends Command {
         ctx.client.poller.start();
         ensureProposalService(ctx.client);
 
-        return ctx.interaction.reply({
-            content: "Reloaded (interaction retention, poller, and proposal service re-applied).",
-            ephemeral: true,
+        try {
+            await getStickyPosts(ctx.client).reload();
+        } catch (error) {
+            await ctx.client
+                .logError("Sticky config refresh failed", error instanceof Error ? error : String(error))
+                .catch(() => undefined);
+            return ctx.interaction.editReply({
+                content:
+                    "Config reloaded, but sticky refresh failed. Existing posts/state are retained; check the error log before retrying.",
+            });
+        }
+
+        return ctx.interaction.editReply({
+            content: "Reloaded (interaction retention, poller, proposal service, and sticky posts re-applied).",
         });
     }
 }
