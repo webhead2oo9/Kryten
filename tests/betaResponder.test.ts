@@ -5,6 +5,7 @@ import { BetaResponder } from "../src/features/betaResponder/betaResponder";
 import type { UserInteractionStore } from "../src/features/userInteractions/store";
 import type { LlmClassifier, ClassificationResult, ClassificationTask } from "../src/llm/classifier";
 import type { ClassificationLogger } from "../src/llm/classificationLogger";
+import type { TypeSafeShadowService } from "../src/llm/typesafeShadow";
 
 vi.mock("../src/features/betaClassifier/promptFile", () => ({
     loadBetaClassifierPrompt: vi.fn(async () => ({
@@ -29,6 +30,32 @@ interface GreetingPayload {
 describe("BetaResponder", () => {
     beforeEach(() => vi.useFakeTimers({ now: new Date("2026-08-12T06:00:00.000Z") }));
     afterEach(() => vi.useRealTimers());
+
+    it("shares the exact two-message-capped transcript task with shadow without changing KEEP", async () => {
+        const send = vi.fn(async () => ({ delete: vi.fn(async () => undefined) }) as unknown as Message);
+        let builtTask: ClassificationTask<"KEEP" | "DELETE"> | null = null;
+        const classifyLazy = vi.fn(async (_fallback, buildTask, _authorized, onTaskReady) => {
+            builtTask = await buildTask();
+            onTaskReady(builtTask);
+            return result("KEEP");
+        });
+        const handle = { marker: "shadow" };
+        const shadow = { begin: vi.fn(() => handle), complete: vi.fn() } as unknown as TypeSafeShadowService;
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactionStore(),
+            classifier(classifyLazy),
+            logger(),
+            shadow,
+        );
+
+        await responder.process(makeMessage(send));
+        await responder.drain();
+
+        expect(shadow.begin).toHaveBeenCalledWith(expect.objectContaining({ taskType: "beta_greeting", task: builtTask }));
+        expect(shadow.complete).toHaveBeenCalledWith(handle, expect.objectContaining({ label: "KEEP" }));
+        expect(responder.getMetrics()).toMatchObject({ kept: 1, keep: 1 });
+    });
 
     it("sends one plain campaign greeting, records it, and deletes it after the configured delay", async () => {
         const deleted = vi.fn(async () => undefined);

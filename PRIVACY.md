@@ -10,6 +10,14 @@ When a message matches a classifier's local candidate rules, Kryten may retrieve
 
 Sanitized text is sent to Fireworks AI for inference. Fireworks states that its open-model inference APIs do not persist prompts or generations unless the customer explicitly opts in, although request metadata is logged and prompts may remain briefly in volatile prompt caches. Kryten does not opt in to prompt logging and does not send a Fireworks end-user identifier. See [Fireworks' data-handling documentation](https://docs.fireworks.ai/guides/security_compliance/data_handling).
 
+Administrators may optionally enable a TypeSafe Jev shadow comparison. When
+enabled, Kryten sends TypeSafe AI the same already-sanitized transcript snapshot
+and private classifier policy used for the authoritative Fireworks decision.
+Jev's result is observational only: it cannot route, reply, retain, or delete a
+message or greeting. TypeSafe is then an additional recipient of the sanitized
+text for these requests. See [TypeSafe's model and data-handling
+documentation](https://docs.typesafe.ai/models).
+
 When beta-greeting retention is enabled, Kryten may send the triggering message
 and at most one same-user follow-up message from the greeting's deletion window
 through the same sanitization and inference path. Only an affirmative, timely
@@ -36,6 +44,13 @@ newcomer records expire after 30 days; greeted records remain so Kryten does not
 repeatedly welcome established members.
 
 Staff classification logs contain the decision, processing status, and a link to the original Discord message. They do not copy the message text or username. Provider failure details are bounded and redacted before logging.
+
+Optional TypeSafe shadow comparison logs are also metadata-only. They contain
+the task type, Fireworks and Jev labels/statuses, Jev probabilities, confidence
+and model version, provider latencies, running agreement counts, and a link to
+the original message. They do not contain message excerpts, transcripts,
+prompts, raw provider output, or usernames. Agreement measures consistency
+between providers; it does not establish that either decision is correct.
 
 ## Deletion and contact
 

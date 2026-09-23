@@ -15,6 +15,7 @@ import {
 import { betaCandidateDecision } from "./candidateGate";
 import { buildClassificationTranscript, TranscriptMessage } from "./context";
 import { loadBetaClassifierPrompt } from "./promptFile";
+import type { ShadowComparisonHandle, TypeSafeShadowService } from "../../llm/typesafeShadow";
 
 const LABELS = ["ROUTE", "IGNORE"] as const;
 const CONTINUATION = /^(?:also\b|same\b|same here\b|same issue\b|me too\b|this too\b|that too\b)/i;
@@ -70,6 +71,7 @@ export class BetaClassifier {
         private readonly classifier: LlmClassifier,
         private readonly classificationLogger: ClassificationLogger,
         private readonly interactions: UserInteractionStore,
+        private readonly typeSafeShadow?: TypeSafeShadowService,
     ) {}
 
     async process(message: Message): Promise<void> {
@@ -156,6 +158,7 @@ export class BetaClassifier {
         let released = false;
         try {
             this.metrics.submitted++;
+            let shadowHandle: ShadowComparisonHandle<(typeof LABELS)[number]> | null = null;
             const result = await this.classifier.classifyLazy(
                 "IGNORE",
                 async () => {
@@ -185,7 +188,20 @@ export class BetaClassifier {
                     };
                 },
                 () => this.runIsAuthorized(message, acceptedConfig, acceptedLlmConfig, run),
+                task => {
+                    shadowHandle =
+                        this.typeSafeShadow?.begin({
+                            taskType: "beta_routing",
+                            message,
+                            task,
+                            isAuthorized: () => this.runIsAuthorized(message, acceptedConfig, acceptedLlmConfig, run),
+                            isLogAuthorized: () =>
+                                this.isAuthorized(message, acceptedConfig, acceptedLlmConfig) &&
+                                this.interactions.isUserGenerationCurrent(run),
+                        }) ?? null;
+                },
             );
+            this.typeSafeShadow?.complete(shadowHandle, result);
             if (result.status !== "ok") this.metrics.providerFallbacks++;
             if (result.label === "ROUTE") this.metrics.route++;
             else this.metrics.ignore++;

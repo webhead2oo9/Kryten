@@ -48,6 +48,16 @@ describe("validateConfig", () => {
                 max_queue_age_ms: "30000",
                 max_requests_per_minute: "60",
             },
+            typesafe_shadow: {
+                enabled: "true",
+                log_channel_id: "shadow-log",
+                model: "jev-1.13.0",
+                timeout_ms: "5000",
+                max_concurrency: "2",
+                max_queue_depth: "4",
+                max_queue_age_ms: "8000",
+                max_requests_per_minute: "30",
+            },
             beta_classifier: {
                 enabled: "true",
                 response_enabled: "false",
@@ -89,6 +99,16 @@ describe("validateConfig", () => {
         expect(config.llm_classifier?.max_queue_age_ms).toBe(30_000);
         expect(config.llm_classifier?.max_requests_per_minute).toBe(60);
         expect(config.llm_classifier?.classification_log_channel_id).toBe("llm-log");
+        expect(config.typesafe_shadow).toEqual({
+            enabled: true,
+            log_channel_id: "shadow-log",
+            model: "jev-1.13.0",
+            timeout_ms: 5_000,
+            max_concurrency: 2,
+            max_queue_depth: 4,
+            max_queue_age_ms: 8_000,
+            max_requests_per_minute: 30,
+        });
         expect(config.beta_classifier?.included_channel_ids).toEqual(["support"]);
         expect(config.beta_classifier?.excluded_role_ids).toEqual(["excluded-role"]);
         expect(config.beta_classifier?.campaign_id).toBe("synthetic-beta");
@@ -262,5 +282,15 @@ describe("validateConfig", () => {
                 },
             }),
         ).toThrow(/FIREWORKS_\* variable/);
+    });
+
+    it("pins the optional TypeSafe shadow and requires an explicit log destination", () => {
+        expect(() => validateConfig({ typesafe_shadow: { enabled: true } })).toThrowError(/log_channel_id/);
+        expect(() =>
+            validateConfig({
+                typesafe_shadow: { enabled: true, log_channel_id: "shadow-log", model: "jev-latest" },
+            }),
+        ).toThrowError(/must be jev-1\.13\.0/);
+        expect(validateConfig({ typesafe_shadow: { enabled: false } }).typesafe_shadow).toEqual({ enabled: false });
     });
 });

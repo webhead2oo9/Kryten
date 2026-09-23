@@ -9,6 +9,7 @@ import type {
     ModerationTimeoutConfig,
     ProposalsConfig,
     TwitterConfig,
+    TypeSafeShadowConfig,
 } from "../types";
 import { validateStickyPosts } from "./stickyPosts";
 import { isRecord } from "../utils/isRecord";
@@ -33,6 +34,13 @@ const LLM_CLASSIFIER_NUMBER_FIELDS: ReadonlyArray<readonly [NumericKey<LlmClassi
     ["top_k", { integer: true, min: 1, max: 200 }],
     ["presence_penalty", { min: -2, max: 2 }],
     ["frequency_penalty", { min: -2, max: 2 }],
+];
+const TYPESAFE_SHADOW_NUMBER_FIELDS: ReadonlyArray<readonly [NumericKey<TypeSafeShadowConfig>, NumberOptions]> = [
+    ["timeout_ms", { integer: true, min: 100, max: 10_000 }],
+    ["max_concurrency", { integer: true, min: 1, max: 16 }],
+    ["max_queue_depth", { integer: true, min: 0, max: 1_000 }],
+    ["max_queue_age_ms", { integer: true, min: 100, max: 60_000 }],
+    ["max_requests_per_minute", { integer: true, min: 1, max: 1_200 }],
 ];
 
 export class ConfigValidationError extends Error {
@@ -536,6 +544,21 @@ function validateLlmClassifier(input: JsonObject, issues: string[]): LlmClassifi
     return out;
 }
 
+function validateTypeSafeShadow(input: JsonObject, issues: string[]): TypeSafeShadowConfig {
+    const out: TypeSafeShadowConfig = {};
+    assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "typesafe_shadow.enabled", issues));
+    assignString(
+        out,
+        "log_channel_id",
+        optionalString(input, "log_channel_id", "typesafe_shadow.log_channel_id", issues),
+    );
+    assignString(out, "model", optionalString(input, "model", "typesafe_shadow.model", issues));
+    assignOptionalNumbers(out, input, "typesafe_shadow", issues, TYPESAFE_SHADOW_NUMBER_FIELDS);
+    if (out.enabled && !out.log_channel_id) issues.push("typesafe_shadow.log_channel_id is required when enabled");
+    if (out.model && out.model !== "jev-1.13.0") issues.push("typesafe_shadow.model must be jev-1.13.0");
+    return out;
+}
+
 function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassifierConfig {
     const out: BetaClassifierConfig = {};
     assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "beta_classifier.enabled", issues));
@@ -757,6 +780,8 @@ export function validateConfig(value: unknown): Config {
     if (autoResponder) out.auto_responder = validateAutoResponder(autoResponder, issues);
     const llmClassifier = optionalSection(value, "llm_classifier", "llm_classifier", issues);
     if (llmClassifier) out.llm_classifier = validateLlmClassifier(llmClassifier, issues);
+    const typeSafeShadow = optionalSection(value, "typesafe_shadow", "typesafe_shadow", issues);
+    if (typeSafeShadow) out.typesafe_shadow = validateTypeSafeShadow(typeSafeShadow, issues);
     const betaClassifier = optionalSection(value, "beta_classifier", "beta_classifier", issues);
     if (betaClassifier) out.beta_classifier = validateBetaClassifier(betaClassifier, issues);
     if (out.beta_classifier?.target_greeting_retention_enabled && !out.llm_classifier?.enabled) {

@@ -5,6 +5,7 @@ import { BetaClassifier } from "../src/features/betaClassifier/betaClassifier";
 import { LlmClassifier, type ClassificationResult, type ClassificationTask } from "../src/llm/classifier";
 import type { ClassificationLogger } from "../src/llm/classificationLogger";
 import type { ClassifierRun, UserInteractionStore } from "../src/features/userInteractions/store";
+import type { TypeSafeShadowService } from "../src/llm/typesafeShadow";
 
 vi.mock("../src/features/betaClassifier/promptFile", () => ({
     loadBetaClassifierPrompt: vi.fn(async () => ({
@@ -114,6 +115,39 @@ function result(
 }
 
 describe("BetaClassifier", () => {
+    it("hands the exact built task to shadow without awaiting shadow completion", async () => {
+        let builtTask: ClassificationTask<"ROUTE" | "IGNORE"> | null = null;
+        let userGenerationCurrent = true;
+        const classifyLazy = vi.fn(async (_fallback, buildTask, _authorized, onTaskReady) => {
+            builtTask = await buildTask();
+            onTaskReady(builtTask);
+            return result("ROUTE");
+        });
+        const handle = { marker: "shadow" };
+        const shadow = {
+            begin: vi.fn(() => handle),
+            complete: vi.fn(),
+        } as unknown as TypeSafeShadowService;
+        const interactions = interactionStore({ isUserGenerationCurrent: vi.fn(() => userGenerationCurrent) });
+        const feature = new BetaClassifier(
+            client(),
+            { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier,
+            auditLogger(),
+            interactions,
+            shadow,
+        );
+
+        await feature.process(discordMessage());
+        await feature.drain();
+
+        expect(shadow.begin).toHaveBeenCalledWith(expect.objectContaining({ taskType: "beta_routing", task: builtTask }));
+        expect(shadow.complete).toHaveBeenCalledWith(handle, expect.objectContaining({ label: "ROUTE" }));
+        const logGate = (shadow.begin as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].isLogAuthorized as () => boolean;
+        expect(logGate()).toBe(true);
+        userGenerationCurrent = false;
+        expect(logGate()).toBe(false);
+    });
+
     it.each(["campaign_id", "campaign_started_at"] as const)(
         "does not admit classifier work when %s is missing",
         async missingField => {

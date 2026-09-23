@@ -11,6 +11,7 @@ import {
     type ClassifierCampaign,
     type UserInteractionStore,
 } from "../userInteractions/store";
+import type { ShadowComparisonHandle, TypeSafeShadowService } from "../../llm/typesafeShadow";
 
 const DEFAULT_DELETE_AFTER_SECONDS = 45;
 const RETENTION_LABELS = ["KEEP", "DELETE"] as const;
@@ -82,6 +83,7 @@ export class BetaResponder {
         private readonly interactions: UserInteractionStore,
         private readonly classifier: LlmClassifier,
         private readonly classificationLogger: ClassificationLogger,
+        private readonly typeSafeShadow?: TypeSafeShadowService,
     ) {}
 
     async process(message: Message): Promise<void> {
@@ -262,6 +264,7 @@ export class BetaResponder {
 
     private async classify(active: ActiveGreeting, target: Message): Promise<void> {
         this.metrics.submitted++;
+        let shadowHandle: ShadowComparisonHandle<(typeof RETENTION_LABELS)[number]> | null = null;
         const result = await this.classifier.classifyLazy(
             "DELETE",
             async () => {
@@ -285,7 +288,21 @@ export class BetaResponder {
                 };
             },
             () => this.retentionIsAuthorized(active),
+            task => {
+                shadowHandle =
+                    this.typeSafeShadow?.begin({
+                        taskType: "beta_greeting",
+                        message: target,
+                        task,
+                        deadlineAt: active.expiresAt,
+                        isAuthorized: () => this.retentionIsAuthorized(active),
+                        isLogAuthorized: () =>
+                            this.configurationIsCurrent(active) &&
+                            this.interactions.isUserGeneration(active.userId, active.generation),
+                    }) ?? null;
+            },
         );
+        this.typeSafeShadow?.complete(shadowHandle, result);
         if (result.status !== "ok") this.metrics.classifierFallbacks++;
         if (result.label === "KEEP") this.metrics.keep++;
         else this.metrics.delete++;

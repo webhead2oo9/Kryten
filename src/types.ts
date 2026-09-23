@@ -119,6 +119,17 @@ export interface LlmClassifierConfig {
     frequency_penalty?: number;
 }
 
+export interface TypeSafeShadowConfig {
+    enabled?: boolean;
+    log_channel_id?: string;
+    model?: string;
+    timeout_ms?: number;
+    max_concurrency?: number;
+    max_queue_depth?: number;
+    max_queue_age_ms?: number;
+    max_requests_per_minute?: number;
+}
+
 export interface ClassifierScopeConfig {
     included_channel_ids?: string[];
     excluded_role_ids?: string[];
@@ -174,6 +185,7 @@ export interface Config {
     moderation?: ModerationConfig;
     auto_responder?: AutoResponderConfig;
     llm_classifier?: LlmClassifierConfig;
+    typesafe_shadow?: TypeSafeShadowConfig;
     beta_classifier?: BetaClassifierConfig;
     twitter?: TwitterConfig;
     proposals?: ProposalsConfig;

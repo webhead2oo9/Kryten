@@ -163,6 +163,7 @@ export class LlmClassifier {
         fallbackLabel: Label,
         buildTask: () => Promise<ClassificationTask<Label> | null>,
         isAuthorized: () => boolean = () => true,
+        onTaskReady?: (task: ClassificationTask<Label>) => unknown,
     ): Promise<ClassificationResult<Label>> {
         this.metrics.submitted++;
         if (this.closed) return Promise.resolve(this.fallback(fallbackLabel, "disabled"));
@@ -228,6 +229,13 @@ export class LlmClassifier {
                         if (!currentConfig || currentConfig.source !== config.source) {
                             resolve(this.fallback(fallbackLabel, "disabled"));
                             return;
+                        }
+                        if (onTaskReady) {
+                            try {
+                                onTaskReady(task);
+                            } catch {
+                                // Shadow observers are isolated from the authoritative provider.
+                            }
                         }
                         resolve(await this.request(task, currentConfig, isAuthorized));
                     } catch {

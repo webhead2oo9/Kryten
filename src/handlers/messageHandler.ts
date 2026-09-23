@@ -13,6 +13,7 @@ import { ClassificationLogger } from "../llm/classificationLogger";
 import { channelOrParentListed } from "../utils/channels";
 import { UserInteractionStore } from "../features/userInteractions/store";
 import { StickyPosts } from "../features/stickyPosts/handler";
+import { TypeSafeShadowClient, TypeSafeShadowService } from "../llm/typesafeShadow";
 
 // Stateful handlers are built once; the registry is the single place to wire
 // features into the message pipeline.
@@ -26,6 +27,7 @@ let betaResponder: BetaResponder | null = null;
 let userInteractions: UserInteractionStore | null = null;
 let features: Feature[] | null = null;
 let stickyPosts: StickyPosts | null = null;
+let typeSafeShadow: TypeSafeShadowService | null = null;
 
 function build(client: KrytenClient): void {
     stickyPosts = new StickyPosts(client);
@@ -35,8 +37,9 @@ function build(client: KrytenClient): void {
     autoResponder = new AutoResponder(client, userInteractions);
     llmClassifier = new LlmClassifier(() => client.config.llm_classifier);
     classificationLogger = new ClassificationLogger(client);
-    betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger, userInteractions);
-    betaResponder = new BetaResponder(client, userInteractions, llmClassifier, classificationLogger);
+    typeSafeShadow = new TypeSafeShadowService(client, new TypeSafeShadowClient(() => client.config.typesafe_shadow));
+    betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger, userInteractions, typeSafeShadow);
+    betaResponder = new BetaResponder(client, userInteractions, llmClassifier, classificationLogger, typeSafeShadow);
 
     features = [
         {
@@ -139,6 +142,11 @@ export function getBetaClassifier(client: KrytenClient): BetaClassifier {
 export function getBetaResponder(client: KrytenClient): BetaResponder {
     ensure(client);
     return betaResponder!;
+}
+
+export function getTypeSafeShadowService(client: KrytenClient): TypeSafeShadowService {
+    ensure(client);
+    return typeSafeShadow!;
 }
 
 export function getUserInteractionStore(client: KrytenClient): UserInteractionStore {
