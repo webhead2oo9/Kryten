@@ -103,7 +103,7 @@ export interface AutoResponderConfig {
 
 export interface LlmClassifierConfig {
     enabled?: boolean;
-    provider?: "fireworks";
+    provider?: "fireworks" | "typesafe";
     model?: string;
     api_key_env?: string;
     classification_log_channel_id?: string;

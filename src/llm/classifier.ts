@@ -1,3 +1,4 @@
+import { TypeSafeShadowClient, criteriaFor, DEFAULT_JEV_MODEL, JEV_PRIMARY_BOUNDS } from "./typesafeShadow";
 import type { LlmClassifierConfig } from "../types";
 
 const FIREWORKS_CHAT_COMPLETIONS_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
@@ -62,6 +63,8 @@ export interface ProviderFailure {
 }
 
 export interface ClassificationResult<Label extends string> {
+    provider?: "fireworks" | "typesafe";
+    model?: string;
     label: Label;
     status: ClassificationStatus;
     latencyMs: number;
@@ -70,6 +73,8 @@ export interface ClassificationResult<Label extends string> {
 }
 
 export interface LlmClassifierMetrics extends ClassificationTokenUsage {
+    provider?: "fireworks" | "typesafe";
+    model?: string;
     submitted: number;
     completed: number;
     fallbacks: number;
@@ -124,6 +129,8 @@ const EMPTY_USAGE: ClassificationTokenUsage = {
 };
 
 export class LlmClassifier {
+    private readonly jev: TypeSafeShadowClient;
+    private readonly controllers = new Set<AbortController>();
     private inFlight = 0;
     private closed = false;
     private readonly queue: QueuedJob[] = [];
@@ -149,7 +156,17 @@ export class LlmClassifier {
         private readonly getConfig: () => LlmClassifierConfig | undefined,
         private readonly fetchImpl: typeof fetch = fetch,
         private readonly environment: NodeJS.ProcessEnv = process.env,
-    ) {}
+    ) {
+        this.jev = new TypeSafeShadowClient(
+            () => {
+                const config = this.getConfig();
+                return config?.provider === "typesafe" ? config : undefined;
+            },
+            fetchImpl,
+            environment,
+            "primary",
+        );
+    }
 
     classify<Label extends string>(task: ClassificationTask<Label>): Promise<ClassificationResult<Label>> {
         if (!validTask(task)) {
@@ -191,7 +208,7 @@ export class LlmClassifier {
         }
         this.acceptedTimestamps.push(enqueuedAt);
 
-        return new Promise(resolve => {
+        return new Promise<ClassificationResult<Label>>(resolve => {
             const job: QueuedJob = {
                 config,
                 cancel: () => resolve(this.fallback(fallbackLabel, "disabled")),
@@ -230,7 +247,12 @@ export class LlmClassifier {
                             resolve(this.fallback(fallbackLabel, "disabled"));
                             return;
                         }
-                        if (onTaskReady) {
+                        if (Date.now() - enqueuedAt > config.maxQueueAgeMs) {
+                            this.metrics.staleRejected++;
+                            resolve(this.fallback(fallbackLabel, "stale"));
+                            return;
+                        }
+                        if (onTaskReady && config.source.provider !== "typesafe") {
                             try {
                                 onTaskReady(task);
                             } catch {
@@ -245,11 +267,17 @@ export class LlmClassifier {
             };
             if (!mustQueue) this.start(job);
             else this.queue.push(job);
-        });
+        }).then(result => ({ ...result, provider: config.source.provider, model: config.model }));
     }
 
     getMetrics(): LlmClassifierMetrics {
-        return { ...this.metrics, inFlight: this.inFlight, queued: this.queue.length };
+        return {
+            ...this.metrics,
+            provider: this.getConfig()?.provider,
+            model: this.getConfig()?.model,
+            inFlight: this.inFlight,
+            queued: this.queue.length,
+        };
     }
 
     drain(): Promise<void> {
@@ -257,9 +285,22 @@ export class LlmClassifier {
         return new Promise(resolve => this.idleWaiters.add(resolve));
     }
 
+    reconfigure(): void {
+        this.jev.reconfigure();
+        for (const controller of this.controllers) controller.abort();
+        const source = this.getConfig();
+        for (const job of this.queue.splice(0)) {
+            if (job.config.source !== source || !source?.enabled) job.cancel();
+            else this.queue.push(job);
+        }
+        this.pump();
+    }
+
     close(): void {
         if (this.closed) return;
         this.closed = true;
+        this.jev.close();
+        for (const controller of this.controllers) controller.abort();
         for (const job of this.queue.splice(0)) job.cancel();
         this.resolveIdleWaiters();
     }
@@ -267,19 +308,48 @@ export class LlmClassifier {
     private effectiveConfig(): EffectiveConfig | null {
         if (this.closed) return null;
         const config = this.getConfig();
-        if (!config?.enabled || config.provider !== "fireworks" || !config.model?.trim()) return null;
-        const apiKeyEnv = config.api_key_env?.trim() || DEFAULT_API_KEY_ENV;
-        if (!/^FIREWORKS_[A-Z0-9_]*$/.test(apiKeyEnv)) return null;
+        if (!config?.enabled || !["fireworks", "typesafe"].includes(config.provider ?? "") || !config.model?.trim())
+            return null;
+        const jev = config.provider === "typesafe";
+        if (
+            jev &&
+            (config.model !== DEFAULT_JEV_MODEL || (config.api_key_env && config.api_key_env !== "TYPESAFE_API_KEY"))
+        )
+            return null;
+        const apiKeyEnv = jev ? "TYPESAFE_API_KEY" : config.api_key_env?.trim() || DEFAULT_API_KEY_ENV;
+        if (!jev && !/^FIREWORKS_[A-Z0-9_]*$/.test(apiKeyEnv)) return null;
         return {
             source: config,
             model: config.model.trim(),
             apiKeyEnv,
-            timeoutMs: config.timeout_ms ?? 30_000,
+            timeoutMs: jev
+                ? Math.min(config.timeout_ms ?? JEV_PRIMARY_BOUNDS.timeout_ms, JEV_PRIMARY_BOUNDS.timeout_ms)
+                : (config.timeout_ms ?? 30_000),
             maxOutputTokens: config.max_output_tokens ?? 131_072,
-            maxConcurrency: config.max_concurrency ?? 1,
-            maxQueueDepth: config.max_queue_depth ?? 25,
-            maxQueueAgeMs: config.max_queue_age_ms ?? 30_000,
-            maxRequestsPerMinute: config.max_requests_per_minute ?? 60,
+            maxConcurrency: jev
+                ? Math.min(
+                      config.max_concurrency ?? JEV_PRIMARY_BOUNDS.max_concurrency,
+                      JEV_PRIMARY_BOUNDS.max_concurrency,
+                  )
+                : (config.max_concurrency ?? 1),
+            maxQueueDepth: jev
+                ? Math.min(
+                      config.max_queue_depth ?? JEV_PRIMARY_BOUNDS.max_queue_depth,
+                      JEV_PRIMARY_BOUNDS.max_queue_depth,
+                  )
+                : (config.max_queue_depth ?? 25),
+            maxQueueAgeMs: jev
+                ? Math.min(
+                      config.max_queue_age_ms ?? JEV_PRIMARY_BOUNDS.max_queue_age_ms,
+                      JEV_PRIMARY_BOUNDS.max_queue_age_ms,
+                  )
+                : (config.max_queue_age_ms ?? 30_000),
+            maxRequestsPerMinute: jev
+                ? Math.min(
+                      config.max_requests_per_minute ?? JEV_PRIMARY_BOUNDS.max_requests_per_minute,
+                      JEV_PRIMARY_BOUNDS.max_requests_per_minute,
+                  )
+                : (config.max_requests_per_minute ?? 60),
             temperature: config.temperature ?? 0,
             topK: config.top_k ?? 40,
             presencePenalty: config.presence_penalty ?? 0,
@@ -324,8 +394,32 @@ export class LlmClassifier {
         if (this.closed || !authorized(isAuthorized)) {
             return this.finish(task.fallbackLabel, "disabled", started, EMPTY_USAGE);
         }
+        if (config.source.provider === "typesafe") {
+            const routing =
+                task.fallbackLabel === "IGNORE" &&
+                task.allowedLabels.length === 2 &&
+                task.allowedLabels.includes("ROUTE" as Label);
+            const greeting =
+                task.fallbackLabel === "DELETE" &&
+                task.allowedLabels.length === 2 &&
+                task.allowedLabels.includes("KEEP" as Label);
+            if (!routing && !greeting) return this.finish(task.fallbackLabel, "invalid_request", started, EMPTY_USAGE);
+            const result = await this.jev.classify(
+                { ...task, criteria: criteriaFor(routing ? "beta_routing" : "beta_greeting", task.allowedLabels) },
+                () => !this.closed && this.getConfig() === config.source && authorized(isAuthorized),
+            );
+            const stillAuthorized = !this.closed && this.getConfig() === config.source && authorized(isAuthorized);
+            const status = result.status === "cancelled" || !stillAuthorized ? "disabled" : result.status;
+            return this.finish(status === "ok" ? result.label : task.fallbackLabel, status, started, {
+                ...EMPTY_USAGE,
+                ...result.usage,
+                totalTokens: result.usage.inputTokens + result.usage.outputTokens,
+            });
+        }
         const apiKey = this.environment[config.apiKeyEnv]?.trim();
         if (!apiKey) return this.finish(task.fallbackLabel, "missing_api_key", started, EMPTY_USAGE);
+        const controller = new AbortController();
+        this.controllers.add(controller);
         try {
             const response = await this.fetchImpl(FIREWORKS_CHAT_COMPLETIONS_URL, {
                 method: "POST",
@@ -351,7 +445,7 @@ export class LlmClassifier {
                         { role: "user", content: task.input },
                     ],
                 }),
-                signal: AbortSignal.timeout(config.timeoutMs),
+                signal: AbortSignal.any([controller.signal, AbortSignal.timeout(config.timeoutMs)]),
             });
             if (!response.ok) {
                 const rawOutput = await readTextBounded(response, MAX_RESPONSE_BYTES);
@@ -395,19 +489,36 @@ export class LlmClassifier {
                     rawOutput: boundedFailureOutput(content),
                 });
             }
+            if (
+                controller.signal.aborted ||
+                this.closed ||
+                this.getConfig() !== config.source ||
+                !authorized(isAuthorized)
+            )
+                return this.finish(task.fallbackLabel, "disabled", started, usage);
             return this.finish(label as Label, "ok", started, usage);
         } catch (error) {
+            if (controller.signal.aborted) return this.finish(task.fallbackLabel, "disabled", started, EMPTY_USAGE);
             const name = error instanceof Error ? error.name : "";
             const status: ClassificationStatus =
                 name === "TimeoutError" || name === "AbortError" ? "timeout" : "http_error";
             return this.finish(task.fallbackLabel, status, started, EMPTY_USAGE);
+        } finally {
+            this.controllers.delete(controller);
         }
     }
 
     private fallback<Label extends string>(label: Label, status: ClassificationStatus): ClassificationResult<Label> {
         this.metrics.completed++;
         this.metrics.fallbacks++;
-        return { label, status, latencyMs: 0, usage: { ...EMPTY_USAGE } };
+        return {
+            label,
+            status,
+            latencyMs: 0,
+            usage: { ...EMPTY_USAGE },
+            provider: this.getConfig()?.provider,
+            model: this.getConfig()?.model,
+        };
     }
 
     private finish<Label extends string>(
@@ -535,4 +646,12 @@ export function authorized(check: () => boolean): boolean {
     } catch {
         return false;
     }
+}
+
+export function createLlmClassifier(
+    getConfig: () => LlmClassifierConfig | undefined,
+    fetchImpl: typeof fetch = fetch,
+    environment: NodeJS.ProcessEnv = process.env,
+): LlmClassifier {
+    return new LlmClassifier(getConfig, fetchImpl, environment);
 }

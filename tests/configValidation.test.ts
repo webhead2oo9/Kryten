@@ -4,6 +4,14 @@ import { join } from "node:path";
 import { ConfigValidationError, validateConfig } from "../src/config/validate";
 
 describe("validateConfig", () => {
+    it("accepts pinned Jev primary and rejects a mismatched model or credential name", () => {
+        const llm = { enabled: true, provider: "typesafe", model: "jev-1.13.0", api_key_env: "TYPESAFE_API_KEY" };
+        expect(validateConfig({ llm_classifier: llm }).llm_classifier).toEqual(llm);
+        expect(() => validateConfig({ llm_classifier: { ...llm, model: "other" } })).toThrow(/model/);
+        expect(() => validateConfig({ llm_classifier: { ...llm, api_key_env: "FIREWORKS_API_KEY" } })).toThrow(
+            /api_key_env/,
+        );
+    });
     it("accepts the checked-in template config", () => {
         const raw = JSON.parse(readFileSync(join(process.cwd(), "template.config.json"), "utf8")) as unknown;
 

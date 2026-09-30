@@ -8,7 +8,7 @@ import { AutoResponder } from "../features/autoresponder/autoResponder";
 import { BetaClassifier } from "../features/betaClassifier/betaClassifier";
 import { BetaResponder } from "../features/betaResponder/betaResponder";
 import { handleTwitterLinks } from "../features/twitter/twitterHandler";
-import { LlmClassifier } from "../llm/classifier";
+import { createLlmClassifier, type LlmClassifier } from "../llm/classifier";
 import { ClassificationLogger } from "../llm/classificationLogger";
 import { channelOrParentListed } from "../utils/channels";
 import { UserInteractionStore } from "../features/userInteractions/store";
@@ -35,7 +35,7 @@ function build(client: KrytenClient): void {
     imageFingerprint = new ImageFingerprintHandler(client);
     userInteractions = new UserInteractionStore(client);
     autoResponder = new AutoResponder(client, userInteractions);
-    llmClassifier = new LlmClassifier(() => client.config.llm_classifier);
+    llmClassifier = createLlmClassifier(() => client.config.llm_classifier);
     classificationLogger = new ClassificationLogger(client);
     typeSafeShadow = new TypeSafeShadowService(client, new TypeSafeShadowClient(() => client.config.typesafe_shadow));
     betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger, userInteractions, typeSafeShadow);

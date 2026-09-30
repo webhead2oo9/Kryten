@@ -65,6 +65,14 @@ async function compare(
 }
 
 describe("TypeSafeShadowService", () => {
+    it("skips all calls and comparison cards when Jev is primary even if shadow is enabled", async () => {
+        const { client, service, message, provider, fetch, send } = setup();
+        client.config.llm_classifier = { enabled: true, provider: "typesafe", model: "jev-1.13.0" };
+        await compare(service, message);
+        expect(provider.classify).not.toHaveBeenCalled();
+        expect(fetch).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+    });
     it("does not call the provider when shadow config is replaced before deferred admission", async () => {
         const { client, service, message, provider, send } = setup();
         const handle = service.begin({

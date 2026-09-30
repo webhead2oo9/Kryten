@@ -519,7 +519,10 @@ function validateLlmClassifier(input: JsonObject, issues: string[]): LlmClassifi
     const out: LlmClassifierConfig = {};
     assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "llm_classifier.enabled", issues));
 
-    const provider = optionalEnum(input, "provider", "llm_classifier.provider", issues, ["fireworks"] as const);
+    const provider = optionalEnum(input, "provider", "llm_classifier.provider", issues, [
+        "fireworks",
+        "typesafe",
+    ] as const);
     if (provider !== undefined) out.provider = provider;
 
     assignString(out, "model", optionalString(input, "model", "llm_classifier.model", issues));
@@ -536,6 +539,12 @@ function validateLlmClassifier(input: JsonObject, issues: string[]): LlmClassifi
 
     if (provider === "fireworks" && out.api_key_env && !/^FIREWORKS_[A-Z0-9_]*$/.test(out.api_key_env)) {
         issues.push("llm_classifier.api_key_env must name a FIREWORKS_* variable for the Fireworks provider");
+    }
+
+    if (provider === "typesafe") {
+        if (out.model !== "jev-1.13.0") issues.push("llm_classifier.model must be jev-1.13.0 for TypeSafe");
+        if (out.api_key_env && out.api_key_env !== "TYPESAFE_API_KEY")
+            issues.push("llm_classifier.api_key_env must be TYPESAFE_API_KEY for TypeSafe");
     }
 
     assignOptionalNumbers(out, input, "llm_classifier", issues, LLM_CLASSIFIER_NUMBER_FIELDS);

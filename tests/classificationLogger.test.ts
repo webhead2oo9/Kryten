@@ -34,6 +34,14 @@ function result(
 }
 
 describe("ClassificationLogger", () => {
+    it.each(["fireworks", "typesafe"] as const)("logs the bound %s provider and model", async provider => {
+        const { client, message, send } = setup();
+        await new ClassificationLogger(client).log(message, result({ provider, model: "synthetic-model" }));
+        expect(send.mock.calls[0]![0].embeds[0].toJSON().fields).toContainEqual({
+            name: "Provider / model",
+            value: `${provider} / synthetic-model`,
+        });
+    });
     it("sends the minimal classification card", async () => {
         const { client, message, send } = setup();
         const logger = new ClassificationLogger(client);
@@ -46,6 +54,7 @@ describe("ClassificationLogger", () => {
         expect(embed.fields).toEqual([
             { name: "Decision", value: "ROUTE", inline: true },
             { name: "Status", value: "OK", inline: true },
+            { name: "Provider / model", value: "unknown / unknown" },
             { name: "Source", value: "[Open message](https://discord.com/channels/guild/support/message)" },
         ]);
         expect(JSON.stringify(payload)).not.toContain("private synthetic message");

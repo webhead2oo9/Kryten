@@ -64,6 +64,10 @@ export class ClassificationLogger {
                 .addFields(
                     { name: "Decision", value: result.label, inline: true },
                     { name: "Status", value: status, inline: true },
+                    {
+                        name: "Provider / model",
+                        value: `${result.provider ?? config?.provider ?? "unknown"} / ${result.model ?? config?.model ?? "unknown"}`,
+                    },
                     { name: "Source", value: `[Open message](${message.url})` },
                 );
 

@@ -8,14 +8,14 @@ Server administrators choose the channels and forum parents included for each cl
 
 When a message matches a classifier's local candidate rules, Kryten may retrieve up to 25 text messages from the surrounding channel conversation. Attachments, images, embeds, reactions, and message timestamps are not included. Before inference, Kryten replaces Discord identities with temporary labels and removes Discord identifiers, mentions, links, email addresses, phone numbers, IP and MAC addresses, and common secret formats. Free-form text can still contain personal information that automated redaction does not recognize.
 
-Sanitized text is sent to Fireworks AI for inference. Fireworks states that its open-model inference APIs do not persist prompts or generations unless the customer explicitly opts in, although request metadata is logged and prompts may remain briefly in volatile prompt caches. Kryten does not opt in to prompt logging and does not send a Fireworks end-user identifier. See [Fireworks' data-handling documentation](https://docs.fireworks.ai/guides/security_compliance/data_handling).
+Sanitized text and the private classifier policy are sent to the configured authoritative provider: Fireworks AI (`fireworks`) or TypeSafe AI (`typesafe`, model `jev-1.13.0`). TypeSafe primary decisions control both beta routing and greeting retention. There is no automatic fallback to another provider. When Fireworks is selected, sanitized text is sent to Fireworks AI for inference. Fireworks states that its open-model inference APIs do not persist prompts or generations unless the customer explicitly opts in, although request metadata is logged and prompts may remain briefly in volatile prompt caches. Kryten does not opt in to prompt logging and does not send a Fireworks end-user identifier. See [Fireworks' data-handling documentation](https://docs.fireworks.ai/guides/security_compliance/data_handling).
 
-Administrators may optionally enable a TypeSafe Jev shadow comparison. When
+With Fireworks as primary, administrators may optionally enable a TypeSafe Jev shadow comparison. When
 enabled, Kryten sends TypeSafe AI the same already-sanitized transcript snapshot
 and private classifier policy used for the authoritative Fireworks decision.
-Jev's result is observational only: it cannot route, reply, retain, or delete a
+In shadow mode, Jev's result is observational only: it cannot route, reply, retain, or delete a
 message or greeting. TypeSafe is then an additional recipient of the sanitized
-text for these requests. See [TypeSafe's model and data-handling
+text for these requests. When TypeSafe is primary, shadow comparisons are suppressed even if enabled in config, so there is only one inference recipient. See [TypeSafe's model and data-handling
 documentation](https://docs.typesafe.ai/models).
 
 When beta-greeting retention is enabled, Kryten may send the triggering message
@@ -43,7 +43,7 @@ or 30 days after that campaign starts, whichever happens first. Never-greeted
 newcomer records expire after 30 days; greeted records remain so Kryten does not
 repeatedly welcome established members.
 
-Staff classification logs contain the decision, processing status, and a link to the original Discord message. They do not copy the message text or username. Provider failure details are bounded and redacted before logging.
+Staff classification logs contain the decision, processing status, provider/model identity, and a link to the original Discord message. They do not copy the message text or username. Provider failure details are bounded and redacted before logging.
 
 Optional TypeSafe shadow comparison logs are also metadata-only. They contain
 the task type, Fireworks and Jev labels/statuses, Jev probabilities, confidence

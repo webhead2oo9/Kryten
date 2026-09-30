@@ -57,7 +57,10 @@ to retain only greetings that are relevant to the active campaign. Enable it wit
 `beta_classifier.target_greeting_retention_enabled` and provide a private prompt
 file through `target_greeting_prompt_file`. The normal greeting remains separately
 controlled by `target_greeting_enabled`; disabling retention restores unconditional
-timed deletion. See `template.config.json` for the complete configuration shape.
+timed deletion. Both beta routing and greeting retention use the configured
+`llm_classifier.provider`: `fireworks` (the template default) or `typesafe`
+with pinned model `jev-1.13.0`. See [classifier provider operations](docs/CLASSIFIER_PROVIDERS.md)
+for bounded Jev settings, rollback, and synthetic smoke checks. See `template.config.json` for the complete configuration shape.
 
 5. **Run the bot**
    ```bash

@@ -6,11 +6,13 @@ const H = vi.hoisted(() => ({
     reconcile: vi.fn(async () => undefined),
     ensureProposalService: vi.fn(),
     reconfigureShadow: vi.fn(),
+    reconfigurePrimary: vi.fn(),
 }));
 
 vi.mock("../src/handlers/messageHandler", () => ({
     getUserInteractionStore: () => ({ reconcileClassifierCampaigns: H.reconcile }),
     getStickyPosts: () => ({ reload: vi.fn(async () => undefined) }),
+    getLlmClassifier: () => ({ reconfigure: H.reconfigurePrimary }),
     getTypeSafeShadowService: () => ({ reconfigure: H.reconfigureShadow }),
 }));
 vi.mock("../src/handlers/proposalHandler", () => ({ ensureProposalService: H.ensureProposalService }));
@@ -23,6 +25,7 @@ describe("/reload_config interaction retention", () => {
         H.reconcile.mockResolvedValue(undefined);
         H.ensureProposalService.mockReset();
         H.reconfigureShadow.mockReset();
+        H.reconfigurePrimary.mockReset();
         const previous = { githubPollMinutes: 60 } satisfies Config;
         const next = { githubPollMinutes: 30 } satisfies Config;
         const context = commandContext(previous, next);
@@ -33,6 +36,7 @@ describe("/reload_config interaction retention", () => {
         expect(context.client.poller.start).toHaveBeenCalledTimes(1);
         expect(H.ensureProposalService).toHaveBeenCalledWith(context.client);
         expect(H.reconfigureShadow).toHaveBeenCalledOnce();
+        expect(H.reconfigurePrimary).toHaveBeenCalledOnce();
         expect(context.interaction.editReply).toHaveBeenCalledWith(
             expect.objectContaining({ content: expect.stringContaining("interaction retention") }),
         );
@@ -43,6 +47,7 @@ describe("/reload_config interaction retention", () => {
         H.reconcile.mockRejectedValue(new Error("synthetic disk failure"));
         H.ensureProposalService.mockReset();
         H.reconfigureShadow.mockReset();
+        H.reconfigurePrimary.mockReset();
         const previous = { githubPollMinutes: 60 } satisfies Config;
         const next = { githubPollMinutes: 30 } satisfies Config;
         const context = commandContext(previous, next);
@@ -53,6 +58,7 @@ describe("/reload_config interaction retention", () => {
         expect(context.client.poller.start).not.toHaveBeenCalled();
         expect(H.ensureProposalService).not.toHaveBeenCalled();
         expect(H.reconfigureShadow).not.toHaveBeenCalled();
+        expect(H.reconfigurePrimary).not.toHaveBeenCalled();
         expect(context.interaction.editReply).toHaveBeenCalledWith(
             expect.objectContaining({ content: expect.stringContaining("synthetic disk failure") }),
         );

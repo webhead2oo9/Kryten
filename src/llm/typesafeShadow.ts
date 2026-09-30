@@ -4,7 +4,15 @@ import type { ClassificationResult, ClassificationTask } from "./classifier";
 import type { TypeSafeShadowConfig } from "../types";
 
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
-const DEFAULT_MODEL = "jev-1.13.0";
+export const DEFAULT_JEV_MODEL = "jev-1.13.0";
+export const JEV_PRIMARY_BOUNDS = {
+    timeout_ms: 2500,
+    max_concurrency: 2,
+    max_queue_depth: 4,
+    max_queue_age_ms: 3000,
+    max_requests_per_minute: 60,
+} as const;
+
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const PROBABILITY_SUM_TOLERANCE = 0.01 + Number.EPSILON;
 
@@ -105,6 +113,7 @@ export class TypeSafeShadowClient {
         private readonly getConfig: () => TypeSafeShadowConfig | undefined,
         private readonly fetchImpl: typeof fetch = fetch,
         private readonly environment: NodeJS.ProcessEnv = process.env,
+        private readonly mode: "shadow" | "primary" = "shadow",
     ) {}
 
     classify<Label extends string>(
@@ -188,15 +197,42 @@ export class TypeSafeShadowClient {
     private effectiveConfig(): EffectiveConfig | null {
         if (this.closed) return null;
         const config = this.getConfig();
-        if (!config?.enabled || !config.log_channel_id?.trim()) return null;
+        if (!config?.enabled || (this.mode === "shadow" && !config.log_channel_id?.trim())) return null;
         return {
             source: config,
-            model: config.model?.trim() || DEFAULT_MODEL,
-            timeoutMs: config.timeout_ms ?? 5_000,
-            maxConcurrency: config.max_concurrency ?? 2,
-            maxQueueDepth: config.max_queue_depth ?? 25,
-            maxQueueAgeMs: config.max_queue_age_ms ?? 10_000,
-            maxRequestsPerMinute: config.max_requests_per_minute ?? 60,
+            model: config.model?.trim() || DEFAULT_JEV_MODEL,
+            timeoutMs:
+                this.mode === "primary"
+                    ? Math.min(config.timeout_ms ?? JEV_PRIMARY_BOUNDS.timeout_ms, JEV_PRIMARY_BOUNDS.timeout_ms)
+                    : (config.timeout_ms ?? 5_000),
+            maxConcurrency:
+                this.mode === "primary"
+                    ? Math.min(
+                          config.max_concurrency ?? JEV_PRIMARY_BOUNDS.max_concurrency,
+                          JEV_PRIMARY_BOUNDS.max_concurrency,
+                      )
+                    : (config.max_concurrency ?? 2),
+            maxQueueDepth:
+                this.mode === "primary"
+                    ? Math.min(
+                          config.max_queue_depth ?? JEV_PRIMARY_BOUNDS.max_queue_depth,
+                          JEV_PRIMARY_BOUNDS.max_queue_depth,
+                      )
+                    : (config.max_queue_depth ?? 25),
+            maxQueueAgeMs:
+                this.mode === "primary"
+                    ? Math.min(
+                          config.max_queue_age_ms ?? JEV_PRIMARY_BOUNDS.max_queue_age_ms,
+                          JEV_PRIMARY_BOUNDS.max_queue_age_ms,
+                      )
+                    : (config.max_queue_age_ms ?? 10_000),
+            maxRequestsPerMinute:
+                this.mode === "primary"
+                    ? Math.min(
+                          config.max_requests_per_minute ?? JEV_PRIMARY_BOUNDS.max_requests_per_minute,
+                          JEV_PRIMARY_BOUNDS.max_requests_per_minute,
+                      )
+                    : (config.max_requests_per_minute ?? 60),
         };
     }
 
@@ -282,6 +318,13 @@ export class TypeSafeShadowClient {
             if (!parsed) {
                 return this.finish(task.fallbackLabel, "invalid_response", started, EMPTY_USAGE, "invalid_shape");
             }
+            if (
+                controller.signal.aborted ||
+                this.effectiveConfig()?.source !== config.source ||
+                !authorized(isAuthorized)
+            ) {
+                return this.finish(task.fallbackLabel, "cancelled", started, parsed.usage);
+            }
             return this.finish(
                 parsed.label,
                 "ok",
@@ -294,7 +337,11 @@ export class TypeSafeShadowClient {
             );
         } catch (error) {
             const name = error instanceof Error ? error.name : "";
-            const timedOut = name === "TimeoutError";
+            const timedOut =
+                name === "TimeoutError" ||
+                (controller.signal.aborted &&
+                    controller.signal.reason instanceof Error &&
+                    controller.signal.reason.name === "TimeoutError");
             const cancelled = controller.signal.aborted && !timedOut;
             return this.finish(
                 task.fallbackLabel,
@@ -558,7 +605,12 @@ export class TypeSafeShadowService {
 
     begin<Label extends string>(options: ShadowBeginOptions<Label>): ShadowComparisonHandle<Label> | null {
         const shadowConfig = this.client.config.typesafe_shadow;
-        if (this.closed || shadowConfig?.enabled !== true || !authorized(options.isAuthorized)) {
+        if (
+            this.closed ||
+            this.client.config.llm_classifier?.provider === "typesafe" ||
+            shadowConfig?.enabled !== true ||
+            !authorized(options.isAuthorized)
+        ) {
             return null;
         }
         const shadowTask: TypeSafeShadowTask<Label> = {
@@ -568,6 +620,7 @@ export class TypeSafeShadowService {
         const requestAuthorized = (): boolean =>
             !this.closed &&
             shadowConfig.enabled === true &&
+            this.client.config.llm_classifier?.provider !== "typesafe" &&
             this.client.config.typesafe_shadow === shadowConfig &&
             authorized(options.isLogAuthorized);
         const shadow = new Promise<{ result: TypeSafeShadowResult<Label>; completedAt: number }>(resolve => {
@@ -638,6 +691,7 @@ export class TypeSafeShadowService {
         const taskMetrics = this.tasks[handle.taskType];
         if (
             this.closed ||
+            this.client.config.llm_classifier?.provider === "typesafe" ||
             this.client.config.typesafe_shadow !== handle.shadowConfig ||
             !authorized(handle.isLogAuthorized)
         ) {
@@ -673,6 +727,7 @@ export class TypeSafeShadowService {
             const channel = await this.client.channels.fetch(channelId).catch(() => null);
             if (
                 this.closed ||
+                this.client.config.llm_classifier?.provider === "typesafe" ||
                 this.client.config.typesafe_shadow !== handle.shadowConfig ||
                 !authorized(handle.isLogAuthorized)
             ) {
@@ -745,7 +800,10 @@ function cancelledShadowResult<Label extends string>(label: Label): TypeSafeShad
     };
 }
 
-function criteriaFor<Label extends string>(taskType: ShadowTaskType, labels: readonly Label[]): Record<Label, string> {
+export function criteriaFor<Label extends string>(
+    taskType: ShadowTaskType,
+    labels: readonly Label[],
+): Record<Label, string> {
     const descriptions: Record<string, string> =
         taskType === "beta_routing"
             ? {
