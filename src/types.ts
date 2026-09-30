@@ -136,6 +136,8 @@ export interface ClassifierScopeConfig {
 }
 
 export interface BetaClassifierConfig extends ClassifierScopeConfig {
+    greeting_template?: string;
+    routing_template?: string;
     enabled?: boolean;
     response_enabled?: boolean;
     target_greeting_enabled?: boolean;

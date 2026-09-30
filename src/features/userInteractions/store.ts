@@ -134,6 +134,32 @@ export class UserInteractionStore {
         });
     }
 
+    /** Offline import: preserve all other state; normal startup owns retention pruning. */
+    async seedCampaignGreetings(userIds: readonly string[], campaignId: string): Promise<void> {
+        await this.exclusive(async () => {
+            const campaign = betaCampaign(this.client);
+            if (!campaign || campaign.campaignId !== campaignId || !classifierCampaignIsActive(campaign)) {
+                throw new Error("greeting import requires the active configured campaign");
+            }
+            const nextRecords = new Map(this.records);
+            for (const userId of userIds) {
+                if (!/^[1-9][0-9]{16,19}$/.test(userId) || this.legacyRecords.has(userId)) {
+                    throw new Error("invalid or legacy greeting import record");
+                }
+                const user = { ...(nextRecords.get(userId) ?? {}) };
+                const greetings = user["campaignGreetings"];
+                if (greetings !== undefined && !isRecord(greetings)) throw new Error("invalid greeting container");
+                const existing = isRecord(greetings) ? greetings[BETA_GREETING_ID] : undefined;
+                if (isRecord(existing) && existing["campaignId"] === campaignId) continue;
+                user["campaignGreetings"] = { ...greetings, [BETA_GREETING_ID]: { campaignId } };
+                nextRecords.set(userId, user);
+            }
+            await this.persist(nextRecords);
+            this.records = nextRecords;
+            this.dirty = false;
+        });
+    }
+
     isUserGeneration(userId: string, generation: number): boolean {
         return this.generation(userId) === generation;
     }

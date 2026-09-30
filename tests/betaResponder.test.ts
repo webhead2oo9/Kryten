@@ -52,7 +52,9 @@ describe("BetaResponder", () => {
         await responder.process(makeMessage(send));
         await responder.drain();
 
-        expect(shadow.begin).toHaveBeenCalledWith(expect.objectContaining({ taskType: "beta_greeting", task: builtTask }));
+        expect(shadow.begin).toHaveBeenCalledWith(
+            expect.objectContaining({ taskType: "beta_greeting", task: builtTask }),
+        );
         expect(shadow.complete).toHaveBeenCalledWith(handle, expect.objectContaining({ label: "KEEP" }));
         expect(responder.getMetrics()).toMatchObject({ kept: 1, keep: 1 });
     });
@@ -80,6 +82,21 @@ describe("BetaResponder", () => {
         await vi.advanceTimersByTimeAsync(44_999);
         expect(deleted).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(1);
+        expect(deleted).toHaveBeenCalledOnce();
+    });
+
+    it("uses operator greeting text while preserving mentions and deletion", async () => {
+        const deleted = vi.fn(async () => undefined);
+        const send = vi.fn(async (_payload: GreetingPayload) => ({ delete: deleted }) as unknown as Message);
+        const client = makeClient();
+        client.config.beta_classifier!.greeting_template = "Synthetic {user}: {announcements}";
+        const responder = new BetaResponder(client, interactionStore(), classifier(vi.fn()), logger());
+        await responder.process(makeMessage(send));
+        expect(send).toHaveBeenCalledWith({
+            content: "Synthetic <@user-1>: <#announcements-1>",
+            allowedMentions: { parse: [], users: ["user-1"] },
+        });
+        await vi.advanceTimersByTimeAsync(45_000);
         expect(deleted).toHaveBeenCalledOnce();
     });
 

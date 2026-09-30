@@ -1,3 +1,4 @@
+import { renderCampaignTemplate } from "../../utils/campaignTemplate";
 import type { Message } from "discord.js";
 import type { KrytenClient } from "../../classes/client";
 import type { BetaClassifierConfig, LlmClassifierConfig } from "../../types";
@@ -249,7 +250,18 @@ export class BetaClassifier {
             ) {
                 try {
                     await message.reply({
-                        content: `Direct USB support and the 15-minute stream restart are still in Beta. To opt in, switch Virtual Desktop on your Quest to the BETA release channel; a separate Beta Streamer installation is no longer required. Please continue in <#${acceptedConfig.target_channel_id}>.\n${acceptedConfig.announcement_url}`,
+                        content:
+                            acceptedConfig.routing_template !== undefined
+                                ? renderCampaignTemplate(acceptedConfig.routing_template, {
+                                      user: `<@${message.author.id}>`,
+                                      target: acceptedConfig.target_channel_id
+                                          ? `<#${acceptedConfig.target_channel_id}>`
+                                          : undefined,
+                                      announcements: acceptedConfig.announcements_channel_id
+                                          ? `<#${acceptedConfig.announcements_channel_id}>`
+                                          : undefined,
+                                  })
+                                : `Direct USB support and the 15-minute stream restart are still in Beta. To opt in, switch Virtual Desktop on your Quest to the BETA release channel; a separate Beta Streamer installation is no longer required. Please continue in <#${acceptedConfig.target_channel_id}>.\n${acceptedConfig.announcement_url}`,
                         allowedMentions: { parse: [], repliedUser: false },
                     });
                     this.metrics.responsesSent++;

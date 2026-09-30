@@ -1,3 +1,4 @@
+import { renderCampaignTemplate } from "../../utils/campaignTemplate";
 import { TextChannel, type Message } from "discord.js";
 import type { KrytenClient } from "../../classes/client";
 import type { BetaClassifierConfig, LlmClassifierConfig } from "../../types";
@@ -155,10 +156,16 @@ export class BetaResponder {
         try {
             const greeting = await (message.channel as TextChannel).send({
                 content:
-                    `Welcome, <@${userId}>! Direct USB support and the 15-minute stream restart are still in Beta. ` +
-                    `To opt in, switch Virtual Desktop on your Quest to the **BETA** release channel; a separate ` +
-                    `Beta Streamer installation is no longer required. For the latest information, check ` +
-                    `<#${config.announcements_channel_id}>.`,
+                    config.greeting_template !== undefined
+                        ? renderCampaignTemplate(config.greeting_template, {
+                              user: `<@${userId}>`,
+                              target: config.target_channel_id ? `<#${config.target_channel_id}>` : undefined,
+                              announcements: `<#${config.announcements_channel_id}>`,
+                          })
+                        : `Welcome, <@${userId}>! Direct USB support and the 15-minute stream restart are still in Beta. ` +
+                          `To opt in, switch Virtual Desktop on your Quest to the **BETA** release channel; a separate ` +
+                          `Beta Streamer installation is no longer required. For the latest information, check ` +
+                          `<#${config.announcements_channel_id}>.`,
                 allowedMentions: { parse: [], users: [userId] },
             });
             this.metrics.greetingsSent++;

@@ -1,3 +1,4 @@
+import { renderCampaignTemplate } from "../utils/campaignTemplate";
 import type {
     AutoResponderConfig,
     BetaClassifierConfig,
@@ -617,6 +618,32 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         "excluded_role_ids",
         optionalStringArray(input, "excluded_role_ids", "beta_classifier.excluded_role_ids", issues),
     );
+    assignString(
+        out,
+        "target_channel_id",
+        optionalString(input, "target_channel_id", "beta_classifier.target_channel_id", issues),
+    );
+    for (const field of ["greeting_template", "routing_template"] as const) {
+        const template = optionalString(input, field, `beta_classifier.${field}`, issues);
+        if (input[field] !== undefined && template === undefined)
+            issues.push(`beta_classifier.${field} must not be empty`);
+        if (template !== undefined) {
+            try {
+                // Discord snowflakes can reach 20 digits; budget every mention at that width.
+                const snowflake = "9".repeat(20);
+                renderCampaignTemplate(template, {
+                    user: `<@${snowflake}>`,
+                    target: out.target_channel_id ? `<#${snowflake}>` : undefined,
+                    announcements: out.announcements_channel_id ? `<#${snowflake}>` : undefined,
+                });
+                out[field] = template;
+            } catch {
+                issues.push(
+                    `beta_classifier.${field} must be a nonempty template using only {user}, {target}, {announcements}, with referenced channel IDs configured and at most 2000 characters after expansion`,
+                );
+            }
+        }
+    }
     const campaignId = optionalString(input, "campaign_id", "beta_classifier.campaign_id", issues);
     if (campaignId && !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(campaignId)) {
         issues.push("beta_classifier.campaign_id must be 1-64 letters, numbers, dots, underscores, or hyphens");
@@ -627,11 +654,6 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         out,
         "campaign_started_at",
         optionalIsoTimestamp(input, "campaign_started_at", "beta_classifier.campaign_started_at", issues),
-    );
-    assignString(
-        out,
-        "target_channel_id",
-        optionalString(input, "target_channel_id", "beta_classifier.target_channel_id", issues),
     );
     assignString(
         out,

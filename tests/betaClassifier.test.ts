@@ -140,7 +140,9 @@ describe("BetaClassifier", () => {
         await feature.process(discordMessage());
         await feature.drain();
 
-        expect(shadow.begin).toHaveBeenCalledWith(expect.objectContaining({ taskType: "beta_routing", task: builtTask }));
+        expect(shadow.begin).toHaveBeenCalledWith(
+            expect.objectContaining({ taskType: "beta_routing", task: builtTask }),
+        );
         expect(shadow.complete).toHaveBeenCalledWith(handle, expect.objectContaining({ label: "ROUTE" }));
         const logGate = (shadow.begin as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].isLogAuthorized as () => boolean;
         expect(logGate()).toBe(true);
@@ -375,6 +377,30 @@ describe("BetaClassifier", () => {
         expect(message.reply).toHaveBeenCalledWith({
             content:
                 "Direct USB support and the 15-minute stream restart are still in Beta. To opt in, switch Virtual Desktop on your Quest to the BETA release channel; a separate Beta Streamer installation is no longer required. Please continue in <#beta>.\nhttps://discord.com/channels/guild/channel/message",
+            allowedMentions: { parse: [], repliedUser: false },
+        });
+        expect(feature.getMetrics()).toMatchObject({ responseEnabled: true, responsesSent: 1, responseFailures: 0 });
+    });
+
+    it("renders operator routing text after ROUTE with no ping", async () => {
+        const testClient = client();
+        testClient.config.beta_classifier!.response_enabled = true;
+        testClient.config.beta_classifier!.routing_template = "Synthetic {target}";
+        const classifier = {
+            classifyLazy: vi.fn(async (_fallback, buildTask) => {
+                await buildTask();
+                return result("ROUTE");
+            }),
+            drain: vi.fn(async () => undefined),
+        } as unknown as LlmClassifier;
+        const message = discordMessage();
+        const feature = new BetaClassifier(testClient, classifier, auditLogger(), interactionStore());
+
+        await feature.process(message);
+        await feature.drain();
+
+        expect(message.reply).toHaveBeenCalledWith({
+            content: "Synthetic <#beta>",
             allowedMentions: { parse: [], repliedUser: false },
         });
         expect(feature.getMetrics()).toMatchObject({ responseEnabled: true, responsesSent: 1, responseFailures: 0 });
