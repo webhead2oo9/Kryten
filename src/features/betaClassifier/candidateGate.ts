@@ -4,13 +4,13 @@ export interface CandidateDecision {
 }
 
 const SUPPORT_INTENT =
-    /\?|\b(?:help|how|why|where|what|when|can|could|does|do|is|are|anyone|issue|problem|broken|fail(?:ed|ing)?|cannot|can't|cant|won't|wont|unable|missing|stuck|spinner|spinning|forever|still (?:on|shows?|running)|only shows?|not showing|not working|disconnect(?:ion)?s?|disconnected|disconnecting|drops?|freez(?:e|es|ing)|frozen|stutter(?:s|ing)?|crash(?:es|ed|ing)?|latency|lag|black screen|no usb|no wired)\b/i;
+    /\?|\b(?:help|how|why|where|what|when|can|could|does|do|is|are|anyone|issue|problem|broken|fail(?:s|ed|ing|ures?)?|cannot|can't|cant|won't|wont|unable|missing|stuck|spinner|spinning|forever|still (?:on|shows?|running)|only shows?|not showing|not working|does(?:n't| not) work|is(?:n't| not) working|disconnect(?:ion)?s?|disconnected|disconnecting|drops?|freez(?:e|es|ing)|frozen|stutter(?:s|ing)?|crash(?:es|ed|ing)?|latency|lag|black screen|no usb|no wired)\b/i;
 const VD_CONTEXT = /\b(?:virtual desktop|vd|streamer|headset app)\b/i;
-const USB_MODE = /\b(?:usb(?:\s+ncm)?|ncm|wired|cabled|link cable|on cable|via cable|over cable)\b/i;
+const USB_MODE = /\b(?:usb(?:\s+ncm)?|ncm|wired|cabled|link cable|charging cable|on cable|via cable|over cable)\b/i;
 const USB_KEYWORD = /\b(?:beta\s+usb\s+setup|usb\s+cable)\b/i;
 const BETA_STREAMER = /\bbeta\s+streamer\b/i;
 const CONNECTION_OR_PERFORMANCE =
-    /\b(?:connect(?:ion|ed|ing)?|detect(?:ed|ing)?|recogniz(?:e|ed|ing)|show(?:s|ing)?|tag|mode|wired|wi-?fi|stream(?:ing)?|disconnect(?:ion)?s?|disconnected|disconnecting|drops?|freez(?:e|es|ing)|frozen|stutter(?:s|ing)?|crash(?:es|ed|ing)?|latency|lag|bitrate|black screen|unreachable|restart(?:s|ed|ing)?)\b/i;
+    /\b(?:connect(?:ion|ed|ing)?|detect(?:ed|ing)?|recogniz(?:e|ed|ing)|show(?:s|ing)?|tag|mode|wired|wi-?fi|stream(?:ing)?|fail(?:s|ed|ing|ures?)?|not working|does(?:n't| not) work|is(?:n't| not) working|disconnect(?:ion)?s?|disconnected|disconnecting|drops?|freez(?:e|es|ing)|frozen|stutter(?:s|ing)?|crash(?:es|ed|ing)?|latency|lag|bitrate|black screen|unreachable|restart(?:s|ed|ing)?)\b/i;
 const FIFTEEN_MINUTE = /\b(?:(?:15|fifteen)\s*(?:min(?:ute)?s?)|quarter\s+hour)\b/i;
 const FIFTEEN_MINUTE_EFFECT = /\b(?:restart|reset|black(?: screen)?|hitch|freeze|frozen|disconnect|drop|stutter)\w*/i;
 
