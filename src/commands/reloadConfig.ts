@@ -24,7 +24,9 @@ export default class extends Command {
         const previousLoadFailed = ctx.client.configLoadFailed;
         try {
             ctx.client.loadConfig();
-            await getUserInteractionStore(ctx.client).reconcileClassifierCampaigns();
+            const interactions = getUserInteractionStore(ctx.client);
+            await interactions.reconcileClassifierCampaigns();
+            await interactions.reconcileKeywordCooldowns();
         } catch (error) {
             ctx.client.config = previousConfig;
             ctx.client.configLoadFailed = previousLoadFailed;

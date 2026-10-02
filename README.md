@@ -11,6 +11,7 @@ See [PRIVACY.md](PRIVACY.md) for Kryten's data handling, retention, and deletion
 - **In-guild editor**: Staff can create, edit, and delete commands — and duplicate pages within a command — with `/create_command` + `/edit_command` without touching JSON by hand.
 - **Resilient syncing**: Cached copies in `.commands-cache.json`, validation, and GitHub SHA tracking prevent corrupt data and overwrite conflicts.
 - **Discord-first feedback**: Critical GitHub or command registration failures are surfaced in a configured Discord channel.
+- **Deterministic keyword responses**: Optional channel-scoped literal rules can send fixed replies without an LLM; see [the operator guide](docs/KEYWORD_AUTO_RESPONSES.md).
 
 ## Requirements
 - Node.js 22+ (Discord.js v14 needs 18.17+; this project pins Node 22)
@@ -51,6 +52,7 @@ See [PRIVACY.md](PRIVACY.md) for Kryten's data handling, retention, and deletion
    | `githubCommandsDir` | Directory in the repo holding the `<name>.json` command files. |
    | `githubBranch` | Branch to read and commit commands on. |
    | `error_log_channel_id` | Optional Discord channel to receive error report cards. |
+   | `keyword_auto_responses` | Optional fixed-response rules with per-user, per-rule 24-hour cooldowns. |
 
 The optional beta greeting can use an LLM during its configured deletion window
 to retain only greetings that are relevant to the active campaign. Enable it with
@@ -144,7 +146,7 @@ dist/             # Compiled JavaScript (tsc output)
 - **Command saves fail with conflict**: Another editor updated GitHub first; run `/reload_commands` to pull latest, then reapply changes.
 - **Slash commands missing**: Confirm `GUILD_ID` is set and the bot has Manage Guild + Manage Commands permissions.
 - **Bot starts but moderation features are inactive**: `config.json` failed to read/parse — the bot runs on an empty config with the message pipeline disabled (the startup log shows the parse error). Fix the file and run `/reload_config`.
-- **Bot crashes on startup**: Ensure `.env` entries are set before launch (e.g. the greeter requires a valid `USER_INTERACTIONS_ENCRYPTION_KEY`).
+- **Bot crashes on startup**: Ensure `.env` entries are set before launch (e.g. the greeter, keyword auto responses, and persistent classifiers require a valid `USER_INTERACTIONS_ENCRYPTION_KEY`).
 
 ## Health Endpoint
 

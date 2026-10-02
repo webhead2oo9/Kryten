@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Kryten is a Discord support & moderation bot (discord.js v14, TypeScript) for the Virtual Desktop community. It does two largely independent jobs:
 
 1. **GitHub-backed custom slash commands** - help-center answers stored as one JSON file per command in a GitHub repo, editable in-guild via an interactive editor, registered as guild slash commands.
-2. **A message-pipeline of moderation/utility features** - scam-image fingerprinting (shared via FingerprintHub), crosspost-spam detection, mod-ping alerts, message reporting, timeout corner, newcomer greeting (the auto-responder), and Twitter/X link fixing.
+2. **A message-pipeline of moderation/utility features** - scam-image fingerprinting (shared via FingerprintHub), crosspost-spam detection, mod-ping alerts, message reporting, timeout corner, reusable keyword auto responses, newcomer greeting (the auto-responder), and Twitter/X link fixing.
 
 ## Commands
 
@@ -29,7 +29,7 @@ npm run test:coverage        # vitest + v8 coverage over src/
 
 ## Required runtime files (all gitignored - copy from templates)
 
-- `.env` - `DISCORD_TOKEN`, `GITHUB_PAT`, `GUILD_ID`, `USER_INTERACTIONS_ENCRYPTION_KEY` (32-byte base64/hex key; required whenever the auto-responder greeter or a persistent classifier is configured - startup fails without it, no fallback), optional `HEALTH_PORT` (default 9010), `HEALTH_HOST` (default `127.0.0.1` - loopback; set `0.0.0.0` to expose deliberately), `PROPOSAL_API_KEY` (required when `proposals.enabled`), and `FINGERPRINT_HUB_API_KEY` (required when `moderation.image_fingerprint.hub_enabled`). Copy from `template.env`.
+- `.env` - `DISCORD_TOKEN`, `GITHUB_PAT`, `GUILD_ID`, `USER_INTERACTIONS_ENCRYPTION_KEY` (32-byte base64/hex key; required whenever the auto-responder greeter, keyword auto responses, or a persistent classifier is configured - startup fails without it, no fallback), optional `HEALTH_PORT` (default 9010), `HEALTH_HOST` (default `127.0.0.1` - loopback; set `0.0.0.0` to expose deliberately), `PROPOSAL_API_KEY` (required when `proposals.enabled`), and `FINGERPRINT_HUB_API_KEY` (required when `moderation.image_fingerprint.hub_enabled`). Copy from `template.env`.
 - `config.json` - all feature config (see `template.config.json` and the `Config` interface in `src/types.ts`). Loaded at startup and hot-reloadable via `/reload_config`.
 - Generated at runtime: `.commands-cache.json` (last-good commands snapshot and the ONLY local command artifact - v2 format with per-file SHAs + digest, written atomically), encrypted `data/user_interactions.json` (greeter and classifier state, AES-256-GCM via `src/utils/encryptedJson.ts`), `data/proposals.db` (staged LLM proposals, SQLite/WAL).
 
