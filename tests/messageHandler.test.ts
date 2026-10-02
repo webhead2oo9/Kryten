@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleMessage, handleMessageDelete } from "../src/handlers/messageHandler";
+import { handleMessage, handleMessageDelete, initFeatures } from "../src/handlers/messageHandler";
 import { KrytenClient } from "../src/classes/client";
 import { Message, PartialMessage } from "discord.js";
 
@@ -16,6 +16,9 @@ const H = vi.hoisted(() => ({
     betaProcess: vi.fn(),
     betaRespond: vi.fn(),
     modPing: vi.fn(),
+    keyword: vi.fn(),
+    reconcileClassifier: vi.fn(async () => undefined),
+    reconcileKeyword: vi.fn(async () => undefined),
     twitter: vi.fn(),
 }));
 
@@ -42,9 +45,19 @@ vi.mock("../src/features/autoresponder/autoResponder", () => ({
         }
     },
 }));
+vi.mock("../src/features/keywordAutoResponses/keywordAutoResponder", () => ({
+    KeywordAutoResponder: class {
+        process = H.keyword;
+        constructor(private readonly client: KrytenClient) {}
+        isConfigured(): boolean {
+            return this.client.config.keyword_auto_responses?.enabled ?? false;
+        }
+    },
+}));
 vi.mock("../src/features/userInteractions/store", () => ({
     UserInteractionStore: class {
-        reconcileClassifierCampaigns = vi.fn(async () => undefined);
+        reconcileClassifierCampaigns = H.reconcileClassifier;
+        reconcileKeywordCooldowns = H.reconcileKeyword;
     },
 }));
 vi.mock("../src/features/betaClassifier/betaClassifier", () => ({
@@ -67,6 +80,7 @@ vi.mock("../src/features/twitter/twitterHandler", () => ({
 const onMessageSpies = [
     H.imageProcess,
     H.modPing,
+    H.keyword,
     H.betaProcess,
     H.betaRespond,
     H.autoProcess,
@@ -83,6 +97,10 @@ function fullConfig() {
             channel_blacklist: [] as string[],
         },
         auto_responder: { random_greeting_channel_id: "greet-1" },
+        keyword_auto_responses: {
+            enabled: true,
+            rules: [{ id: "rule", channel_ids: ["chan-1"], keywords: ["word"], response: "Hi {user}" }],
+        },
         llm_classifier: { enabled: true, provider: "fireworks" as const, model: "example" },
         beta_classifier: {
             enabled: true,
@@ -169,6 +187,17 @@ describe("handleMessage short-circuits", () => {
     });
 });
 
+describe("feature initialization", () => {
+    it("reconciles classifier and keyword retention", async () => {
+        const client = makeClient();
+
+        await initFeatures(client);
+
+        expect(H.reconcileClassifier).toHaveBeenCalledOnce();
+        expect(H.reconcileKeyword).toHaveBeenCalledOnce();
+    });
+});
+
 describe("handleMessage pipeline semantics", () => {
     it("runs every enabled feature in registry order when none short-circuit", async () => {
         const client = makeClient();
@@ -194,6 +223,21 @@ describe("handleMessage pipeline semantics", () => {
         expect(H.autoProcess).not.toHaveBeenCalled();
         expect(H.crosspostCheck).not.toHaveBeenCalled();
         expect(H.twitter).not.toHaveBeenCalled();
+    });
+
+    it("runs keyword responses without making a successful reply terminal", async () => {
+        H.keyword.mockResolvedValue(true);
+        const client = makeClient();
+        await handleMessage(makeMessage(), client);
+
+        expect(H.imageProcess).toHaveBeenCalledOnce();
+        expect(H.modPing).toHaveBeenCalledOnce();
+        expect(H.keyword).toHaveBeenCalledOnce();
+        expect(H.betaProcess).toHaveBeenCalledOnce();
+        expect(H.betaRespond).toHaveBeenCalledOnce();
+        expect(H.autoProcess).toHaveBeenCalledOnce();
+        expect(H.crosspostCheck).toHaveBeenCalledOnce();
+        expect(H.twitter).toHaveBeenCalledOnce();
     });
 
     it("does not stop the pipeline when onMessage resolves a falsy value", async () => {
@@ -230,6 +274,16 @@ describe("handleMessage pipeline semantics", () => {
         expect(H.autoProcess).toHaveBeenCalledTimes(1);
         expect(H.crosspostCheck).toHaveBeenCalledTimes(1);
         expect(H.twitter).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips keyword responses when their opt-in switch is disabled", async () => {
+        const config = fullConfig();
+        config.keyword_auto_responses.enabled = false;
+        const client = makeClient({ config });
+        await handleMessage(makeMessage(), client);
+
+        expect(H.keyword).not.toHaveBeenCalled();
+        expect(H.betaProcess).toHaveBeenCalledOnce();
     });
 });
 

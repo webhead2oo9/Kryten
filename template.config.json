@@ -74,6 +74,17 @@
         "store_path": "./data/user_interactions.json",
         "encryption_key_env": "USER_INTERACTIONS_ENCRYPTION_KEY"
     },
+    "keyword_auto_responses": {
+        "enabled": false,
+        "rules": [
+            {
+                "id": "release-status",
+                "channel_ids": ["YOUR_SUPPORT_CHANNEL_ID_HERE"],
+                "keywords": ["release status", "status update"],
+                "response": "Hi {user}! The current status is available in the linked announcement."
+            }
+        ]
+    },
     "llm_classifier": {
         "enabled": false,
         "provider": "fireworks",

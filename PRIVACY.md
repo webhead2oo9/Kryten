@@ -27,6 +27,7 @@ Kryten keeps one AES-256-GCM-encrypted interaction record per relevant Discord u
 - per-classifier campaign ID, `ROUTE` or `IGNORE` decision, and classification time.
 - the current beta campaign ID when the beta-testing greeting has already been
   shown or suppressed by an operator backfill.
+- per-rule timestamps for keyword auto-response cooldowns.
 
 Classifier and beta-greeting records do not contain message text, prompts,
 model output, reasoning, usernames, or conversation history. Beta-classifier
@@ -34,6 +35,10 @@ and beta-greeting records are deleted when the configured beta campaign changes
 or 30 days after that campaign starts, whichever happens first. Never-greeted
 newcomer records expire after 30 days; greeted records remain so Kryten does not
 repeatedly welcome established members.
+
+Keyword auto-response records contain no message content. Expired timestamps
+are pruned on startup, config reload, or a later interaction-store operation;
+there is no background expiry timer, so an idle record can remain past 24 hours.
 
 Staff classification logs contain the decision, processing status, and a link to the original Discord message. They do not copy the message text or username. Provider failure details are bounded and redacted before logging.
 

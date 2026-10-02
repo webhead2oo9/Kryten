@@ -101,6 +101,18 @@ export interface AutoResponderConfig {
     encryption_key_env?: string; // Env var holding the 32-byte AES key (default USER_INTERACTIONS_ENCRYPTION_KEY)
 }
 
+export interface KeywordAutoResponseRule {
+    id: string;
+    channel_ids: string[];
+    keywords: string[];
+    response: string;
+}
+
+export interface KeywordAutoResponsesConfig {
+    enabled?: boolean;
+    rules?: KeywordAutoResponseRule[];
+}
+
 export interface LlmClassifierConfig {
     enabled?: boolean;
     provider?: "fireworks";
@@ -173,6 +185,7 @@ export interface Config {
     error_log_channel_id?: string; // Channel ID for error logging
     moderation?: ModerationConfig;
     auto_responder?: AutoResponderConfig;
+    keyword_auto_responses?: KeywordAutoResponsesConfig;
     llm_classifier?: LlmClassifierConfig;
     beta_classifier?: BetaClassifierConfig;
     twitter?: TwitterConfig;

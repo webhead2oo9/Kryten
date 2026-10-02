@@ -4,6 +4,8 @@ import type {
     Config,
     CrosspostConfig,
     ImageFingerprintConfig,
+    KeywordAutoResponseRule,
+    KeywordAutoResponsesConfig,
     LlmClassifierConfig,
     ModerationConfig,
     ModerationTimeoutConfig,
@@ -506,6 +508,55 @@ function validateAutoResponder(input: JsonObject, issues: string[]): AutoRespond
     return out;
 }
 
+function validateKeywordAutoResponses(input: JsonObject, issues: string[]): KeywordAutoResponsesConfig {
+    const out: KeywordAutoResponsesConfig = {};
+    assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "keyword_auto_responses.enabled", issues));
+    const rawRules = input["rules"];
+    if (rawRules !== undefined) {
+        if (!Array.isArray(rawRules)) {
+            issues.push("keyword_auto_responses.rules must be an array");
+        } else {
+            const ids = new Set<string>();
+            out.rules = rawRules.flatMap((value, index): KeywordAutoResponseRule[] => {
+                const path = `keyword_auto_responses.rules[${index}]`;
+                if (!isRecord(value)) {
+                    issues.push(`${path} must be an object`);
+                    return [];
+                }
+                const id = optionalString(value, "id", `${path}.id`, issues);
+                const channelIds = optionalStringArray(value, "channel_ids", `${path}.channel_ids`, issues);
+                const keywords = optionalStringArray(value, "keywords", `${path}.keywords`, issues);
+                const response = optionalString(value, "response", `${path}.response`, issues);
+                if (!id || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) {
+                    issues.push(`${path}.id must be 1-64 lowercase letters, numbers, underscores, or hyphens`);
+                } else if (ids.has(id)) {
+                    issues.push(`${path}.id duplicates stable rule id '${id}'`);
+                } else {
+                    ids.add(id);
+                }
+                if (!channelIds?.length) issues.push(`${path}.channel_ids must not be empty`);
+                if (!keywords?.length) issues.push(`${path}.keywords must not be empty`);
+                if (keywords?.some(keyword => keyword.length > 100)) {
+                    issues.push(`${path}.keywords entries must be at most 100 characters`);
+                }
+                if (!response?.includes("{user}")) issues.push(`${path}.response must contain {user}`);
+                if (response && response.replaceAll("{user}", `<@${"9".repeat(20)}>`).length > 2_000) {
+                    issues.push(`${path}.response must be at most 2000 characters after substituting {user}`);
+                }
+                if (response && [...response.matchAll(/\{([^{}]+)\}/gu)].some(match => match[1] !== "user")) {
+                    issues.push(`${path}.response contains an unsupported placeholder`);
+                }
+                if (!id || !channelIds?.length || !keywords?.length || !response) return [];
+                return [{ id, channel_ids: channelIds, keywords, response }];
+            });
+        }
+    }
+    if (out.enabled && !out.rules?.length) {
+        issues.push("keyword_auto_responses.rules must not be empty when enabled");
+    }
+    return out;
+}
+
 function validateLlmClassifier(input: JsonObject, issues: string[]): LlmClassifierConfig {
     const out: LlmClassifierConfig = {};
     assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "llm_classifier.enabled", issues));
@@ -755,6 +806,10 @@ export function validateConfig(value: unknown): Config {
     if (moderation) out.moderation = validateModeration(moderation, issues);
     const autoResponder = optionalSection(value, "auto_responder", "auto_responder", issues);
     if (autoResponder) out.auto_responder = validateAutoResponder(autoResponder, issues);
+    const keywordAutoResponses = optionalSection(value, "keyword_auto_responses", "keyword_auto_responses", issues);
+    if (keywordAutoResponses) {
+        out.keyword_auto_responses = validateKeywordAutoResponses(keywordAutoResponses, issues);
+    }
     const llmClassifier = optionalSection(value, "llm_classifier", "llm_classifier", issues);
     if (llmClassifier) out.llm_classifier = validateLlmClassifier(llmClassifier, issues);
     const betaClassifier = optionalSection(value, "beta_classifier", "beta_classifier", issues);

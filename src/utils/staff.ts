@@ -52,7 +52,16 @@ export async function messageAuthorHasExemptRole(
 ): Promise<boolean | null> {
     const exemptRoleIds = [...whitelistedRoleIds, ...staffRoleIds(config)];
     if (!exemptRoleIds.length) return false;
-    const member = message.member ?? (await message.guild?.members.fetch(message.author.id).catch(() => null));
-    if (!member) return null;
+    let member = message.member;
+    if (!member || !hasKnownRoles(member)) {
+        member = (await message.guild?.members.fetch(message.author.id).catch(() => null)) ?? null;
+    }
+    if (!member || !hasKnownRoles(member)) return null;
     return memberHasAnyRole(member, exemptRoleIds);
+}
+
+function hasKnownRoles(member: unknown): boolean {
+    if (!member) return false;
+    const roles = (member as { roles?: unknown }).roles;
+    return Array.isArray(roles) || !!(roles as { cache?: unknown } | undefined)?.cache;
 }

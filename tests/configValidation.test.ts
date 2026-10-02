@@ -102,6 +102,96 @@ describe("validateConfig", () => {
         expect(config.beta_classifier?.max_context_messages).toBe(25);
     });
 
+    it("accepts reusable keyword auto-response rules", () => {
+        const config = validateConfig({
+            keyword_auto_responses: {
+                enabled: true,
+                rules: [
+                    {
+                        id: "release-status",
+                        channel_ids: ["support-channel"],
+                        keywords: ["release status", "status update"],
+                        response: "Hi {user}!\n\nStatus text.",
+                    },
+                ],
+            },
+        });
+
+        expect(config.keyword_auto_responses).toEqual({
+            enabled: true,
+            rules: [
+                {
+                    id: "release-status",
+                    channel_ids: ["support-channel"],
+                    keywords: ["release status", "status update"],
+                    response: "Hi {user}!\n\nStatus text.",
+                },
+            ],
+        });
+    });
+
+    it("rejects unsafe or ambiguous keyword auto-response rules", () => {
+        expect(() =>
+            validateConfig({
+                keyword_auto_responses: {
+                    enabled: true,
+                    rules: [
+                        { id: "duplicate", channel_ids: [], keywords: [""], response: "missing mention" },
+                        {
+                            id: "duplicate",
+                            channel_ids: ["channel"],
+                            keywords: ["word"],
+                            response: "Hi {user} {unknown}",
+                        },
+                    ],
+                },
+            }),
+        ).toThrowError(
+            /keyword_auto_responses\.rules\[0\]\.channel_ids.*keywords.*response.*duplicate.*unsupported placeholder/s,
+        );
+    });
+
+    it("requires at least one rule when keyword auto responses are enabled", () => {
+        expect(() => validateConfig({ keyword_auto_responses: { enabled: true, rules: [] } })).toThrowError(
+            /rules must not be empty when enabled/,
+        );
+    });
+
+    it("validates the maximum rendered response length after user substitution", () => {
+        const responseAtLimit = `${"x".repeat(1_977)}{user}`;
+        expect(() =>
+            validateConfig({
+                keyword_auto_responses: {
+                    enabled: true,
+                    rules: [
+                        {
+                            id: "boundary",
+                            channel_ids: ["support-channel"],
+                            keywords: ["status"],
+                            response: responseAtLimit,
+                        },
+                    ],
+                },
+            }),
+        ).not.toThrow();
+
+        expect(() =>
+            validateConfig({
+                keyword_auto_responses: {
+                    enabled: true,
+                    rules: [
+                        {
+                            id: "too-long",
+                            channel_ids: ["support-channel"],
+                            keywords: ["status"],
+                            response: `${responseAtLimit}x`,
+                        },
+                    ],
+                },
+            }),
+        ).toThrow(/response must be at most 2000 characters after substituting \{user\}/);
+    });
+
     it("rejects unsafe or malformed known settings", () => {
         expect(() =>
             validateConfig({

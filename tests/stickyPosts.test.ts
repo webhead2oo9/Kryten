@@ -467,8 +467,10 @@ it("bounds total queued work across channels", async () => {
 it("wires bounded sticky draining before index destroys Discord", () => {
     const index = readFileSync(join(process.cwd(), "src/index.ts"), "utf8");
     const shutdown = index.slice(index.indexOf("async function shutdown"));
-    expect(shutdown).toContain("await getStickyPosts(client).stop(5_000)");
-    expect(shutdown.indexOf("await getStickyPosts(client).stop(5_000)")).toBeLessThan(
+    expect(shutdown).toContain("getStickyPosts(client).stop(5_000)");
+    expect(shutdown).toContain("getKeywordAutoResponder(client).stop(5_000)");
+    expect(shutdown.indexOf("getStickyPosts(client).stop(5_000)")).toBeLessThan(shutdown.indexOf("await stopBetaFeatures("));
+    expect(shutdown.indexOf("getKeywordAutoResponder(client).stop(5_000)")).toBeLessThan(
         shutdown.indexOf("await stopBetaFeatures("),
     );
 });

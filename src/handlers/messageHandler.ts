@@ -13,6 +13,7 @@ import { ClassificationLogger } from "../llm/classificationLogger";
 import { channelOrParentListed } from "../utils/channels";
 import { UserInteractionStore } from "../features/userInteractions/store";
 import { StickyPosts } from "../features/stickyPosts/handler";
+import { KeywordAutoResponder } from "../features/keywordAutoResponses/keywordAutoResponder";
 
 // Stateful handlers are built once; the registry is the single place to wire
 // features into the message pipeline.
@@ -26,12 +27,14 @@ let betaResponder: BetaResponder | null = null;
 let userInteractions: UserInteractionStore | null = null;
 let features: Feature[] | null = null;
 let stickyPosts: StickyPosts | null = null;
+let keywordAutoResponder: KeywordAutoResponder | null = null;
 
 function build(client: KrytenClient): void {
     stickyPosts = new StickyPosts(client);
     crosspost = new CrosspostHandler(client);
     imageFingerprint = new ImageFingerprintHandler(client);
     userInteractions = new UserInteractionStore(client);
+    keywordAutoResponder = new KeywordAutoResponder(client, userInteractions);
     autoResponder = new AutoResponder(client, userInteractions);
     llmClassifier = new LlmClassifier(() => client.config.llm_classifier);
     classificationLogger = new ClassificationLogger(client);
@@ -53,6 +56,14 @@ function build(client: KrytenClient): void {
             name: "mod-ping",
             enabled: c => !!c.config.moderation?.mod_role_id,
             onMessage: (message, c) => handleModPing(message, c),
+        },
+        {
+            name: "keyword-auto-responder",
+            enabled: c =>
+                (c.config.keyword_auto_responses?.enabled ?? false) && !!c.config.keyword_auto_responses?.rules?.length,
+            onMessage: async message => {
+                await keywordAutoResponder!.process(message);
+            },
         },
         {
             name: "beta-classifier",
@@ -101,6 +112,7 @@ function ensure(client: KrytenClient): Feature[] {
 export async function initFeatures(client: KrytenClient): Promise<void> {
     ensure(client);
     await userInteractions!.reconcileClassifierCampaigns();
+    await userInteractions!.reconcileKeywordCooldowns();
 }
 
 /** Crosspost handler accessor (used by the health endpoint for metrics). */
@@ -144,6 +156,11 @@ export function getBetaResponder(client: KrytenClient): BetaResponder {
 export function getUserInteractionStore(client: KrytenClient): UserInteractionStore {
     ensure(client);
     return userInteractions!;
+}
+
+export function getKeywordAutoResponder(client: KrytenClient): KeywordAutoResponder {
+    ensure(client);
+    return keywordAutoResponder!;
 }
 
 export function getStickyPosts(client: KrytenClient): StickyPosts {
