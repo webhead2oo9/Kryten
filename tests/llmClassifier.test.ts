@@ -392,6 +392,22 @@ describe("LlmClassifier", () => {
         expect(fetchImpl).not.toHaveBeenCalled();
     });
 
+    it("does not await task observers before starting or completing Fireworks", async () => {
+        const observerNeverCompletes = new Promise<void>(() => undefined);
+        const observer = vi.fn(() => observerNeverCompletes);
+        const fetchImpl = vi.fn(async () => completion("ROUTE"));
+        const classifier = new LlmClassifier(configSource(), fetchImpl as typeof fetch, {
+            FIREWORKS_API_KEY: "test-key",
+        });
+
+        await expect(classifier.classifyLazy("IGNORE", async () => task, () => true, observer)).resolves.toMatchObject({
+            status: "ok",
+            label: "ROUTE",
+        });
+        expect(observer).toHaveBeenCalledWith(task);
+        expect(fetchImpl).toHaveBeenCalledOnce();
+    });
+
     it("cancels queued work and blocks in-progress local work from egress after close", async () => {
         let releaseFirst!: () => void;
         let markStarted!: () => void;

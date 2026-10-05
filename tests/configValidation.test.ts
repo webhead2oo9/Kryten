@@ -4,6 +4,22 @@ import { join } from "node:path";
 import { ConfigValidationError, validateConfig } from "../src/config/validate";
 
 describe("validateConfig", () => {
+    it("accepts only the pinned local Clef identity and no credential selector", () => {
+        const llm = { enabled: true, provider: "clef", model: "Cloudflare/clef-flash" };
+        expect(validateConfig({ llm_classifier: llm }).llm_classifier).toEqual(llm);
+        expect(() => validateConfig({ llm_classifier: { ...llm, model: "clef-flash" } })).toThrow(/model/);
+        expect(() => validateConfig({ llm_classifier: { ...llm, api_key_env: "FIREWORKS_API_KEY" } })).toThrow(
+            /api_key_env/,
+        );
+    });
+    it("accepts pinned Jev primary and rejects a mismatched model or credential name", () => {
+        const llm = { enabled: true, provider: "typesafe", model: "jev-1.13.0", api_key_env: "TYPESAFE_API_KEY" };
+        expect(validateConfig({ llm_classifier: llm }).llm_classifier).toEqual(llm);
+        expect(() => validateConfig({ llm_classifier: { ...llm, model: "other" } })).toThrow(/model/);
+        expect(() => validateConfig({ llm_classifier: { ...llm, api_key_env: "FIREWORKS_API_KEY" } })).toThrow(
+            /api_key_env/,
+        );
+    });
     it("accepts the checked-in template config", () => {
         const raw = JSON.parse(readFileSync(join(process.cwd(), "template.config.json"), "utf8")) as unknown;
 
@@ -48,6 +64,16 @@ describe("validateConfig", () => {
                 max_queue_age_ms: "30000",
                 max_requests_per_minute: "60",
             },
+            typesafe_shadow: {
+                enabled: "true",
+                log_channel_id: "shadow-log",
+                model: "jev-1.13.0",
+                timeout_ms: "5000",
+                max_concurrency: "2",
+                max_queue_depth: "4",
+                max_queue_age_ms: "8000",
+                max_requests_per_minute: "30",
+            },
             beta_classifier: {
                 enabled: "true",
                 response_enabled: "false",
@@ -89,6 +115,16 @@ describe("validateConfig", () => {
         expect(config.llm_classifier?.max_queue_age_ms).toBe(30_000);
         expect(config.llm_classifier?.max_requests_per_minute).toBe(60);
         expect(config.llm_classifier?.classification_log_channel_id).toBe("llm-log");
+        expect(config.typesafe_shadow).toEqual({
+            enabled: true,
+            log_channel_id: "shadow-log",
+            model: "jev-1.13.0",
+            timeout_ms: 5_000,
+            max_concurrency: 2,
+            max_queue_depth: 4,
+            max_queue_age_ms: 8_000,
+            max_requests_per_minute: 30,
+        });
         expect(config.beta_classifier?.included_channel_ids).toEqual(["support"]);
         expect(config.beta_classifier?.excluded_role_ids).toEqual(["excluded-role"]);
         expect(config.beta_classifier?.campaign_id).toBe("synthetic-beta");
@@ -100,6 +136,96 @@ describe("validateConfig", () => {
         expect(config.beta_classifier?.announcements_channel_id).toBe("announcements");
         expect(config.beta_classifier?.prompt_file).toBe("/private/beta-prompt.json");
         expect(config.beta_classifier?.max_context_messages).toBe(25);
+    });
+
+    it("accepts reusable keyword auto-response rules", () => {
+        const config = validateConfig({
+            keyword_auto_responses: {
+                enabled: true,
+                rules: [
+                    {
+                        id: "release-status",
+                        channel_ids: ["support-channel"],
+                        keywords: ["release status", "status update"],
+                        response: "Hi {user}!\n\nStatus text.",
+                    },
+                ],
+            },
+        });
+
+        expect(config.keyword_auto_responses).toEqual({
+            enabled: true,
+            rules: [
+                {
+                    id: "release-status",
+                    channel_ids: ["support-channel"],
+                    keywords: ["release status", "status update"],
+                    response: "Hi {user}!\n\nStatus text.",
+                },
+            ],
+        });
+    });
+
+    it("rejects unsafe or ambiguous keyword auto-response rules", () => {
+        expect(() =>
+            validateConfig({
+                keyword_auto_responses: {
+                    enabled: true,
+                    rules: [
+                        { id: "duplicate", channel_ids: [], keywords: [""], response: "missing mention" },
+                        {
+                            id: "duplicate",
+                            channel_ids: ["channel"],
+                            keywords: ["word"],
+                            response: "Hi {user} {unknown}",
+                        },
+                    ],
+                },
+            }),
+        ).toThrowError(
+            /keyword_auto_responses\.rules\[0\]\.channel_ids.*keywords.*response.*duplicate.*unsupported placeholder/s,
+        );
+    });
+
+    it("requires at least one rule when keyword auto responses are enabled", () => {
+        expect(() => validateConfig({ keyword_auto_responses: { enabled: true, rules: [] } })).toThrowError(
+            /rules must not be empty when enabled/,
+        );
+    });
+
+    it("validates the maximum rendered response length after user substitution", () => {
+        const responseAtLimit = `${"x".repeat(1_977)}{user}`;
+        expect(() =>
+            validateConfig({
+                keyword_auto_responses: {
+                    enabled: true,
+                    rules: [
+                        {
+                            id: "boundary",
+                            channel_ids: ["support-channel"],
+                            keywords: ["status"],
+                            response: responseAtLimit,
+                        },
+                    ],
+                },
+            }),
+        ).not.toThrow();
+
+        expect(() =>
+            validateConfig({
+                keyword_auto_responses: {
+                    enabled: true,
+                    rules: [
+                        {
+                            id: "too-long",
+                            channel_ids: ["support-channel"],
+                            keywords: ["status"],
+                            response: `${responseAtLimit}x`,
+                        },
+                    ],
+                },
+            }),
+        ).toThrow(/response must be at most 2000 characters after substituting \{user\}/);
     });
 
     it("rejects unsafe or malformed known settings", () => {
@@ -262,5 +388,15 @@ describe("validateConfig", () => {
                 },
             }),
         ).toThrow(/FIREWORKS_\* variable/);
+    });
+
+    it("pins the optional TypeSafe shadow and requires an explicit log destination", () => {
+        expect(() => validateConfig({ typesafe_shadow: { enabled: true } })).toThrowError(/log_channel_id/);
+        expect(() =>
+            validateConfig({
+                typesafe_shadow: { enabled: true, log_channel_id: "shadow-log", model: "jev-latest" },
+            }),
+        ).toThrowError(/must be jev-1\.13\.0/);
+        expect(validateConfig({ typesafe_shadow: { enabled: false } }).typesafe_shadow).toEqual({ enabled: false });
     });
 });

@@ -1,3 +1,4 @@
+import { renderCampaignTemplate } from "../../utils/campaignTemplate";
 import type { Message } from "discord.js";
 import type { KrytenClient } from "../../classes/client";
 import type { BetaClassifierConfig, LlmClassifierConfig } from "../../types";
@@ -13,8 +14,11 @@ import {
     UserInteractionStore,
 } from "../userInteractions/store";
 import { betaCandidateDecision } from "./candidateGate";
+import { clefRoutingAdmissionExcluded } from "./clefAdmission";
 import { buildClassificationTranscript, TranscriptMessage } from "./context";
 import { loadBetaClassifierPrompt } from "./promptFile";
+import { sanitizeSensitiveText } from "../../llm/privacy";
+import type { ShadowComparisonHandle, TypeSafeShadowService } from "../../llm/typesafeShadow";
 
 const LABELS = ["ROUTE", "IGNORE"] as const;
 const CONTINUATION = /^(?:also\b|same\b|same here\b|same issue\b|me too\b|this too\b|that too\b)/i;
@@ -70,6 +74,7 @@ export class BetaClassifier {
         private readonly classifier: LlmClassifier,
         private readonly classificationLogger: ClassificationLogger,
         private readonly interactions: UserInteractionStore,
+        private readonly typeSafeShadow?: TypeSafeShadowService,
     ) {}
 
     async process(message: Message): Promise<void> {
@@ -84,10 +89,12 @@ export class BetaClassifier {
                 !decision.candidate && CONTINUATION.test(message.content.trim()) && !!message.reference?.messageId;
             if (!decision.candidate && !referencedContinuation) return;
             this.metrics.candidates++;
+            if (llmConfig.provider === "clef" && clefRoutingAdmissionExcluded(message.content)) return;
 
             const campaign = this.campaign(config!);
             if (!campaign) return; // isEligible() already ruled this out
             // A store failure is a persistence problem, not an LLM provider fallback.
+            const triggeringContent = message.content;
             const admission = await this.interactions.beginClassifierRun(message.author.id, campaign).catch(() => null);
             if (admission === null) {
                 this.metrics.persistenceFailures++;
@@ -100,7 +107,15 @@ export class BetaClassifier {
                 return;
             }
 
-            const task = this.classify(message, config!, llmConfig, referencedContinuation, campaign, admission.run);
+            const task = this.classify(
+                message,
+                config!,
+                llmConfig,
+                referencedContinuation,
+                campaign,
+                admission.run,
+                triggeringContent,
+            );
             this.pending.add(task);
             void task.then(
                 () => this.pending.delete(task),
@@ -152,14 +167,30 @@ export class BetaClassifier {
         referencedContinuation: boolean,
         campaign: ClassifierCampaign,
         run: ClassifierRun,
+        triggeringContent: string,
     ): Promise<void> {
         let released = false;
         try {
             this.metrics.submitted++;
+            let shadowHandle: ShadowComparisonHandle<(typeof LABELS)[number]> | null = null;
             const result = await this.classifier.classifyLazy(
                 "IGNORE",
                 async () => {
                     if (!this.runIsAuthorized(message, acceptedConfig, acceptedLlmConfig, run)) return null;
+                    if (acceptedLlmConfig.provider === "clef") {
+                        if (referencedContinuation || triggeringContent.length > 4_000) return null;
+                        const sanitized = sanitizeSensitiveText(triggeringContent, {
+                            [message.channelId]: "support",
+                        });
+                        if (!sanitized.trim() || sanitized.length > 4_000) return null;
+                        return {
+                            systemInstruction: "Clef beta routing policy v1",
+                            input: sanitized,
+                            allowedLabels: LABELS,
+                            fallbackLabel: "IGNORE",
+                            clef: { taskType: "beta_routing", messages: [sanitized] },
+                        };
+                    }
                     let prompt;
                     try {
                         prompt = await loadBetaClassifierPrompt(acceptedConfig.prompt_file!);
@@ -168,12 +199,13 @@ export class BetaClassifier {
                         return null;
                     }
                     this.promptVersion = prompt.version;
-                    const context = await this.contextFor(message, acceptedConfig);
+                    const context = await this.contextFor(message, acceptedConfig, triggeringContent);
                     if (!context) return null;
                     if (
                         referencedContinuation &&
                         (!context.referencedParent ||
-                            !betaCandidateDecision(`${context.referencedParent.content}\n${message.content}`).candidate)
+                            !betaCandidateDecision(`${context.referencedParent.content}\n${triggeringContent}`)
+                                .candidate)
                     ) {
                         return null;
                     }
@@ -185,7 +217,20 @@ export class BetaClassifier {
                     };
                 },
                 () => this.runIsAuthorized(message, acceptedConfig, acceptedLlmConfig, run),
+                task => {
+                    shadowHandle =
+                        this.typeSafeShadow?.begin({
+                            taskType: "beta_routing",
+                            message,
+                            task,
+                            isAuthorized: () => this.runIsAuthorized(message, acceptedConfig, acceptedLlmConfig, run),
+                            isLogAuthorized: () =>
+                                this.isAuthorized(message, acceptedConfig, acceptedLlmConfig) &&
+                                this.interactions.isUserGenerationCurrent(run),
+                        }) ?? null;
+                },
             );
+            this.typeSafeShadow?.complete(shadowHandle, result);
             if (result.status !== "ok") this.metrics.providerFallbacks++;
             if (result.label === "ROUTE") this.metrics.route++;
             else this.metrics.ignore++;
@@ -233,7 +278,18 @@ export class BetaClassifier {
             ) {
                 try {
                     await message.reply({
-                        content: `Direct USB support and the 15-minute stream restart are still in Beta. To opt in, switch Virtual Desktop on your Quest to the BETA release channel; a separate Beta Streamer installation is no longer required. Please continue in <#${acceptedConfig.target_channel_id}>.\n${acceptedConfig.announcement_url}`,
+                        content:
+                            acceptedConfig.routing_template !== undefined
+                                ? renderCampaignTemplate(acceptedConfig.routing_template, {
+                                      user: `<@${message.author.id}>`,
+                                      target: acceptedConfig.target_channel_id
+                                          ? `<#${acceptedConfig.target_channel_id}>`
+                                          : undefined,
+                                      announcements: acceptedConfig.announcements_channel_id
+                                          ? `<#${acceptedConfig.announcements_channel_id}>`
+                                          : undefined,
+                                  })
+                                : `Direct USB support and the 15-minute stream restart are still in Beta. To opt in, switch Virtual Desktop on your Quest to the BETA release channel; a separate Beta Streamer installation is no longer required. Please continue in <#${acceptedConfig.target_channel_id}>.\n${acceptedConfig.announcement_url}`,
                         allowedMentions: { parse: [], repliedUser: false },
                     });
                     this.metrics.responsesSent++;
@@ -275,7 +331,11 @@ export class BetaClassifier {
         };
     }
 
-    private async contextFor(message: Message, config: BetaClassifierConfig): Promise<BuiltContext | null> {
+    private async contextFor(
+        message: Message,
+        config: BetaClassifierConfig,
+        triggeringContent: string,
+    ): Promise<BuiltContext | null> {
         const maxMessages = config.max_context_messages ?? 25;
         const messages = new Map<string, Message>([[message.id, message]]);
         if (maxMessages > 1) {
@@ -313,7 +373,7 @@ export class BetaClassifier {
             const transcriptMessage: TranscriptMessage = {
                 id: item.id,
                 authorId: item.author.id,
-                content: item.content,
+                content: item.id === message.id ? triggeringContent : item.content,
                 createdTimestamp: item.createdTimestamp,
                 isBot: item.author.bot,
                 isStaff: memberHasStaffRole(item.member, this.client.config),

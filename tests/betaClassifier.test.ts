@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "discord.js";
 import type { KrytenClient } from "../src/classes/client";
 import { BetaClassifier } from "../src/features/betaClassifier/betaClassifier";
 import { LlmClassifier, type ClassificationResult, type ClassificationTask } from "../src/llm/classifier";
 import type { ClassificationLogger } from "../src/llm/classificationLogger";
 import type { ClassifierRun, UserInteractionStore } from "../src/features/userInteractions/store";
+import type { TypeSafeShadowService } from "../src/llm/typesafeShadow";
 
 vi.mock("../src/features/betaClassifier/promptFile", () => ({
     loadBetaClassifierPrompt: vi.fn(async () => ({
@@ -114,6 +115,118 @@ function result(
 }
 
 describe("BetaClassifier", () => {
+    afterEach(() => vi.restoreAllMocks());
+    it.each(["ROUTE", "IGNORE"] as const)("classifies %s from the admitted message snapshot", async label => {
+        vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-30T23:00:00Z"));
+        const c = client();
+        const message = discordMessage();
+        const original = message.content;
+        let promptContainsOriginal = false;
+        const classifyLazy = vi.fn(async (_fallback, buildTask, _authorized, onTaskReady) => {
+            const task = await buildTask();
+            onTaskReady(task);
+            promptContainsOriginal = task.input.includes(original);
+            return result(label);
+        });
+        const interactions = interactionStore();
+        const begin = (interactions.beginClassifierRun as ReturnType<typeof vi.fn>).getMockImplementation()!;
+        vi.spyOn(interactions, "beginClassifierRun").mockImplementation(async (...args) => {
+            message.content = "mutated synthetic input";
+            return begin(...args);
+        });
+        const audit = auditLogger();
+        const shadow = { begin: vi.fn(), complete: vi.fn() } as unknown as TypeSafeShadowService;
+        const feature = new BetaClassifier(
+            c,
+            { classifyLazy, drain: vi.fn() } as unknown as LlmClassifier,
+            audit,
+            interactions,
+            shadow,
+        );
+        await feature.process(message);
+        await feature.drain();
+        expect(promptContainsOriginal).toBe(true);
+        expect(audit.log).toHaveBeenCalledOnce();
+        expect(shadow.begin).toHaveBeenCalledOnce();
+    });
+    it("does not classify heuristic exclusions or unadmitted users", async () => {
+        const classifyLazy = vi.fn(async (_fallback, buildTask) => {
+            await buildTask();
+            return result("IGNORE", "invalid_request");
+        });
+        const feature = new BetaClassifier(
+            client(),
+            { classifyLazy, drain: vi.fn() } as unknown as LlmClassifier,
+            auditLogger(),
+            interactionStore(),
+        );
+        await feature.process(discordMessage({ content: "synthetic unrelated message" }));
+        await feature.process(
+            discordMessage({
+                content: "same here",
+                reference: { messageId: "parent" },
+                fetchReference: vi.fn(async () => discordMessage({ id: "parent", content: "unrelated" })),
+            }),
+        );
+        await feature.drain();
+        const suppressed = new BetaClassifier(
+            client(),
+            { classifyLazy, drain: vi.fn() } as unknown as LlmClassifier,
+            auditLogger(),
+            interactionStore({ beginClassifierRun: vi.fn(async () => ({ status: "already_routed" })) }),
+        );
+        await suppressed.process(discordMessage());
+        await suppressed.drain();
+    });
+    it("records technical fallback status", async () => {
+        const feature = new BetaClassifier(
+            client(),
+            {
+                classifyLazy: vi.fn(async () => result("IGNORE", "timeout")),
+                drain: vi.fn(),
+            } as unknown as LlmClassifier,
+            auditLogger(),
+            interactionStore(),
+        );
+        await feature.process(discordMessage());
+        await feature.drain();
+        expect(feature.getMetrics()).toMatchObject({ ignore: 1, providerFallbacks: 1 });
+    });
+    it("hands the exact built task to shadow without awaiting shadow completion", async () => {
+        let builtTask: ClassificationTask<"ROUTE" | "IGNORE"> | null = null;
+        let userGenerationCurrent = true;
+        const classifyLazy = vi.fn(async (_fallback, buildTask, _authorized, onTaskReady) => {
+            builtTask = await buildTask();
+            onTaskReady(builtTask);
+            return result("ROUTE");
+        });
+        const handle = { marker: "shadow" };
+        const shadow = {
+            begin: vi.fn(() => handle),
+            complete: vi.fn(),
+        } as unknown as TypeSafeShadowService;
+        const interactions = interactionStore({ isUserGenerationCurrent: vi.fn(() => userGenerationCurrent) });
+        const feature = new BetaClassifier(
+            client(),
+            { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier,
+            auditLogger(),
+            interactions,
+            shadow,
+        );
+
+        await feature.process(discordMessage());
+        await feature.drain();
+
+        expect(shadow.begin).toHaveBeenCalledWith(
+            expect.objectContaining({ taskType: "beta_routing", task: builtTask }),
+        );
+        expect(shadow.complete).toHaveBeenCalledWith(handle, expect.objectContaining({ label: "ROUTE" }));
+        const logGate = (shadow.begin as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].isLogAuthorized as () => boolean;
+        expect(logGate()).toBe(true);
+        userGenerationCurrent = false;
+        expect(logGate()).toBe(false);
+    });
+
     it.each(["campaign_id", "campaign_started_at"] as const)(
         "does not admit classifier work when %s is missing",
         async missingField => {
@@ -346,6 +459,30 @@ describe("BetaClassifier", () => {
         expect(feature.getMetrics()).toMatchObject({ responseEnabled: true, responsesSent: 1, responseFailures: 0 });
     });
 
+    it("renders operator routing text after ROUTE with no ping", async () => {
+        const testClient = client();
+        testClient.config.beta_classifier!.response_enabled = true;
+        testClient.config.beta_classifier!.routing_template = "Synthetic {target}";
+        const classifier = {
+            classifyLazy: vi.fn(async (_fallback, buildTask) => {
+                await buildTask();
+                return result("ROUTE");
+            }),
+            drain: vi.fn(async () => undefined),
+        } as unknown as LlmClassifier;
+        const message = discordMessage();
+        const feature = new BetaClassifier(testClient, classifier, auditLogger(), interactionStore());
+
+        await feature.process(message);
+        await feature.drain();
+
+        expect(message.reply).toHaveBeenCalledWith({
+            content: "Synthetic <#beta>",
+            allowedMentions: { parse: [], repliedUser: false },
+        });
+        expect(feature.getMetrics()).toMatchObject({ responseEnabled: true, responsesSent: 1, responseFailures: 0 });
+    });
+
     it("does not respond to IGNORE or a stale configuration", async () => {
         const ignoredClient = client();
         ignoredClient.config.beta_classifier!.response_enabled = true;
@@ -550,6 +687,138 @@ describe("BetaClassifier", () => {
         expect(message.fetchReference).toHaveBeenCalledTimes(1);
         expect(request!.input).toContain("Why does VD via USB keep disconnecting?");
         expect(request!.input).toContain("same here");
+    });
+
+    it("uses sanitized message-only Clef input and fails ambiguous replies without history fetches", async () => {
+        const testClient = client();
+        testClient.config.llm_classifier = {
+            enabled: true,
+            provider: "clef",
+            model: "Cloudflare/clef-flash",
+        };
+        const built: Array<ClassificationTask<"ROUTE" | "IGNORE"> | null> = [];
+        const classifyLazy = vi.fn(async (_fallback, buildTask) => {
+            const request = await buildTask();
+            built.push(request);
+            return result("IGNORE", request ? "ok" : "invalid_request");
+        });
+        const feature = new BetaClassifier(
+            testClient,
+            { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier,
+            auditLogger(),
+            interactionStore(),
+        );
+        const direct = discordMessage({ content: "Why does <@123456789012345678> VD USB disconnect?" });
+        const directHistory = (direct.channel as any).messages.fetch as ReturnType<typeof vi.fn>;
+        await feature.process(direct);
+        await feature.drain();
+        expect(directHistory).not.toHaveBeenCalled();
+        expect(direct.fetchReference).not.toHaveBeenCalled();
+        expect(built[0]?.clef).toEqual({
+            taskType: "beta_routing",
+            messages: ["Why does @member VD USB disconnect?"],
+        });
+
+        const ambiguous = discordMessage({
+            id: "ambiguous",
+            content: "same here",
+            reference: { messageId: "parent" },
+        });
+        const ambiguousHistory = (ambiguous.channel as any).messages.fetch as ReturnType<typeof vi.fn>;
+        await feature.process(ambiguous);
+        await feature.drain();
+        expect(ambiguousHistory).not.toHaveBeenCalled();
+        expect(ambiguous.fetchReference).not.toHaveBeenCalled();
+        expect(built[1]).toBeNull();
+    });
+
+    it.each([
+        "Why does the STEAM EDITION of Virtual Desktop fail over direct USB?",
+        "Why does the Steam-edition of Virtual Desktop fail over direct USB?",
+        "Why does the Steam version of Virtual Desktop fail over direct USB?",
+        "Why does the Steam-version of Virtual Desktop fail over direct USB?",
+        "This is not the Steam edition, but why does VD USB keep disconnecting?",
+        "I use both the Steam version and Quest version; why does VD USB keep disconnecting?",
+    ])("excludes explicit Steam edition/version reports before Clef store admission: %s", async content => {
+        const testClient = client();
+        testClient.config.llm_classifier = {
+            enabled: true,
+            provider: "clef",
+            model: "Cloudflare/clef-flash",
+        };
+        const beginClassifierRun = vi.fn();
+        const classifyLazy = vi.fn();
+        const feature = new BetaClassifier(
+            testClient,
+            { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier,
+            auditLogger(),
+            interactionStore({ beginClassifierRun }),
+        );
+
+        await feature.process(discordMessage({ content }));
+        await feature.drain();
+
+        expect(beginClassifierRun).not.toHaveBeenCalled();
+        expect(classifyLazy).not.toHaveBeenCalled();
+        expect(feature.getMetrics()).toMatchObject({ messagesSeen: 1, candidates: 1, submitted: 0 });
+    });
+
+    it.each([
+        "Why does VD USB disconnect whenever SteamVR starts?",
+        "Why does VD USB disconnect while I play Steam games?",
+    ])("admits ordinary Steam references to Clef routing: %s", async content => {
+        const testClient = client();
+        testClient.config.llm_classifier = {
+            enabled: true,
+            provider: "clef",
+            model: "Cloudflare/clef-flash",
+        };
+        const classifyLazy = vi.fn(async (_fallback, buildTask) => {
+            const request = await buildTask();
+            return result("ROUTE", request ? "ok" : "invalid_request");
+        });
+        const interactions = interactionStore();
+        const feature = new BetaClassifier(
+            testClient,
+            { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier,
+            auditLogger(),
+            interactions,
+        );
+
+        await feature.process(discordMessage({ content }));
+        await feature.drain();
+
+        expect(interactions.beginClassifierRun).toHaveBeenCalledOnce();
+        expect(classifyLazy).toHaveBeenCalledOnce();
+        expect(feature.getMetrics()).toMatchObject({ candidates: 1, submitted: 1, route: 1 });
+    });
+
+    it.each([
+        ["fireworks", "accounts/fireworks/models/example"],
+        ["typesafe", "jev-1.13.0"],
+    ] as const)("does not apply the Clef Steam exclusion to %s", async (provider, model) => {
+        const testClient = client();
+        testClient.config.llm_classifier = { enabled: true, provider, model };
+        const classifyLazy = vi.fn(async (_fallback, buildTask) => {
+            const request = await buildTask();
+            return result("IGNORE", request ? "ok" : "invalid_request");
+        });
+        const interactions = interactionStore();
+        const feature = new BetaClassifier(
+            testClient,
+            { classifyLazy, drain: vi.fn(async () => undefined) } as unknown as LlmClassifier,
+            auditLogger(),
+            interactions,
+        );
+
+        await feature.process(
+            discordMessage({ content: "Why does the Steam edition of Virtual Desktop fail over direct USB?" }),
+        );
+        await feature.drain();
+
+        expect(interactions.beginClassifierRun).toHaveBeenCalledOnce();
+        expect(classifyLazy).toHaveBeenCalledOnce();
+        expect(feature.getMetrics()).toMatchObject({ candidates: 1, submitted: 1, ignore: 1 });
     });
 
     it("rejects a terse continuation when its parent is cross-channel or irrelevant", async () => {

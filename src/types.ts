@@ -101,9 +101,21 @@ export interface AutoResponderConfig {
     encryption_key_env?: string; // Env var holding the 32-byte AES key (default USER_INTERACTIONS_ENCRYPTION_KEY)
 }
 
+export interface KeywordAutoResponseRule {
+    id: string;
+    channel_ids: string[];
+    keywords: string[];
+    response: string;
+}
+
+export interface KeywordAutoResponsesConfig {
+    enabled?: boolean;
+    rules?: KeywordAutoResponseRule[];
+}
+
 export interface LlmClassifierConfig {
     enabled?: boolean;
-    provider?: "fireworks";
+    provider?: "fireworks" | "typesafe" | "clef";
     model?: string;
     api_key_env?: string;
     classification_log_channel_id?: string;
@@ -119,12 +131,25 @@ export interface LlmClassifierConfig {
     frequency_penalty?: number;
 }
 
+export interface TypeSafeShadowConfig {
+    enabled?: boolean;
+    log_channel_id?: string;
+    model?: string;
+    timeout_ms?: number;
+    max_concurrency?: number;
+    max_queue_depth?: number;
+    max_queue_age_ms?: number;
+    max_requests_per_minute?: number;
+}
+
 export interface ClassifierScopeConfig {
     included_channel_ids?: string[];
     excluded_role_ids?: string[];
 }
 
 export interface BetaClassifierConfig extends ClassifierScopeConfig {
+    greeting_template?: string;
+    routing_template?: string;
     enabled?: boolean;
     response_enabled?: boolean;
     target_greeting_enabled?: boolean;
@@ -173,7 +198,9 @@ export interface Config {
     error_log_channel_id?: string; // Channel ID for error logging
     moderation?: ModerationConfig;
     auto_responder?: AutoResponderConfig;
+    keyword_auto_responses?: KeywordAutoResponsesConfig;
     llm_classifier?: LlmClassifierConfig;
+    typesafe_shadow?: TypeSafeShadowConfig;
     beta_classifier?: BetaClassifierConfig;
     twitter?: TwitterConfig;
     proposals?: ProposalsConfig;

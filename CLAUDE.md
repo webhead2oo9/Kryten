@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Kryten is a Discord support & moderation bot (discord.js v14, TypeScript) for the Virtual Desktop community. It does two largely independent jobs:
 
 1. **GitHub-backed custom slash commands** - help-center answers stored as one JSON file per command in a GitHub repo, editable in-guild via an interactive editor, registered as guild slash commands.
-2. **A message-pipeline of moderation/utility features** - scam-image fingerprinting (shared via FingerprintHub), crosspost-spam detection, mod-ping alerts, message reporting, timeout corner, newcomer greeting (the auto-responder), and Twitter/X link fixing.
+2. **A message-pipeline of moderation/utility features** - scam-image fingerprinting (shared via FingerprintHub), crosspost-spam detection, mod-ping alerts, message reporting, timeout corner, reusable keyword auto responses, newcomer greeting (the auto-responder), and Twitter/X link fixing.
 
 ## Commands
 
@@ -29,7 +29,7 @@ npm run test:coverage        # vitest + v8 coverage over src/
 
 ## Required runtime files (all gitignored - copy from templates)
 
-- `.env` - `DISCORD_TOKEN`, `GITHUB_PAT`, `GUILD_ID`, `USER_INTERACTIONS_ENCRYPTION_KEY` (32-byte base64/hex key; required whenever the auto-responder greeter or a persistent classifier is configured - startup fails without it, no fallback), optional `HEALTH_PORT` (default 9010), `HEALTH_HOST` (default `127.0.0.1` - loopback; set `0.0.0.0` to expose deliberately), `PROPOSAL_API_KEY` (required when `proposals.enabled`), and `FINGERPRINT_HUB_API_KEY` (required when `moderation.image_fingerprint.hub_enabled`). Copy from `template.env`.
+- `.env` - `DISCORD_TOKEN`, `GITHUB_PAT`, `GUILD_ID`, `USER_INTERACTIONS_ENCRYPTION_KEY` (32-byte base64/hex key; required whenever the auto-responder greeter, keyword auto responses, or a persistent classifier is configured - startup fails without it, no fallback), optional `HEALTH_PORT` (default 9010), `HEALTH_HOST` (default `127.0.0.1` - loopback; set `0.0.0.0` to expose deliberately), `PROPOSAL_API_KEY` (required when `proposals.enabled`), and `FINGERPRINT_HUB_API_KEY` (required when `moderation.image_fingerprint.hub_enabled`). Copy from `template.env`.
 - `config.json` - all feature config (see `template.config.json` and the `Config` interface in `src/types.ts`). Loaded at startup and hot-reloadable via `/reload_config`.
 - Generated at runtime: `.commands-cache.json` (last-good commands snapshot and the ONLY local command artifact - v2 format with per-file SHAs + digest, written atomically), encrypted `data/user_interactions.json` (greeter and classifier state, AES-256-GCM via `src/utils/encryptedJson.ts`), `data/proposals.db` (staged LLM proposals, SQLite/WAL).
 
@@ -82,6 +82,10 @@ The most intricate area. Commands live as one JSON file per command (`commands/<
 The extension seam for non-command behavior. `handleMessage` applies shared short-circuits (ignore bots, channel blacklist, and `client.configLoadFailed` - a bad `config.json` disables the whole pipeline until `/reload_config` succeeds, so moderation never runs on defaults nobody configured), then iterates a `Feature[]` registry, calling each enabled `onMessage`/`onMessageDelete` hook inside a try/catch that routes errors to `client.logError` - **one feature throwing cannot take down the pipeline.** An `onMessage` hook that resolves `true` stops the pipeline for that message (image-fingerprint returns it after deleting a known-bad image so crosspost never tracks a gone message).
 
 To add a feature, implement the `Feature` interface (`src/features/feature.ts`) and append one entry to the registry in `build()`. Stateful handlers (e.g. `CrosspostHandler`) are constructed once and held in module scope; `getCrosspostHandler` exposes the instance to the health endpoint. Features read config fresh on each call so `/reload_config` takes effect without restart.
+
+### Classifier providers (`src/llm/classifier.ts`)
+
+`createLlmClassifier` is the shared primary factory used by the message pipeline and synthetic probe. `llm_classifier.provider` selects `fireworks` (template default), `typesafe` (pinned `jev-1.13.0`, `TYPESAFE_API_KEY`), or `clef` (pinned `Cloudflare/clef-flash`, fixed `http://127.0.0.1:58756/v1/systemone`, no credential). Clef uses embedded versioned routing/greeting criteria and sanitized message-only state; routing never fetches history or reply parents, and explicitly named Steam edition/version reports are deterministically excluded before store admission, while greeting remains capped at the trigger plus first follow-up. Its shared limits are one active request and two queued; routing has a 15-second total local deadline, while greeting uses the remaining absolute 240-second greeting window including queue time. Greeting DELETE decisions preserve 45 seconds of minimum visibility, KEEP is indefinite when timely, and missing/failed decisions delete at the cap. Jev primary reuses `TypeSafeShadowClient` under its existing caps. Failure labels remain IGNORE/DELETE with no cross-provider fallback. Config identity and caller authorization are checked around build/send/positive completion; reload cancels queued/building work. Jev and Clef primary both suppress shadow comparisons. Audit results carry provider/model identity; health counters remain cumulative across reloads. See `docs/CLASSIFIER_PROVIDERS.md` and `scripts/probePrimary.cjs`.
 
 ### Crosspost detection (`src/features/crosspost/`)
 

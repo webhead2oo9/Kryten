@@ -4,12 +4,20 @@ import type { Config } from "../src/types";
 
 const H = vi.hoisted(() => ({
     reconcile: vi.fn(async () => undefined),
+    reconcileKeywords: vi.fn(async () => undefined),
     ensureProposalService: vi.fn(),
+    reconfigureShadow: vi.fn(),
+    reconfigurePrimary: vi.fn(),
 }));
 
 vi.mock("../src/handlers/messageHandler", () => ({
-    getUserInteractionStore: () => ({ reconcileClassifierCampaigns: H.reconcile }),
+    getUserInteractionStore: () => ({
+        reconcileClassifierCampaigns: H.reconcile,
+        reconcileKeywordCooldowns: H.reconcileKeywords,
+    }),
     getStickyPosts: () => ({ reload: vi.fn(async () => undefined) }),
+    getLlmClassifier: () => ({ reconfigure: H.reconfigurePrimary }),
+    getTypeSafeShadowService: () => ({ reconfigure: H.reconfigureShadow }),
 }));
 vi.mock("../src/handlers/proposalHandler", () => ({ ensureProposalService: H.ensureProposalService }));
 
@@ -19,7 +27,11 @@ describe("/reload_config interaction retention", () => {
     it("reconciles campaigns before reapplying other live configuration", async () => {
         H.reconcile.mockReset();
         H.reconcile.mockResolvedValue(undefined);
+        H.reconcileKeywords.mockReset();
+        H.reconcileKeywords.mockResolvedValue(undefined);
         H.ensureProposalService.mockReset();
+        H.reconfigureShadow.mockReset();
+        H.reconfigurePrimary.mockReset();
         const previous = { githubPollMinutes: 60 } satisfies Config;
         const next = { githubPollMinutes: 30 } satisfies Config;
         const context = commandContext(previous, next);
@@ -27,8 +39,11 @@ describe("/reload_config interaction retention", () => {
         await new ReloadConfigCommand().run(context);
 
         expect(H.reconcile).toHaveBeenCalledTimes(1);
+        expect(H.reconcileKeywords).toHaveBeenCalledTimes(1);
         expect(context.client.poller.start).toHaveBeenCalledTimes(1);
         expect(H.ensureProposalService).toHaveBeenCalledWith(context.client);
+        expect(H.reconfigureShadow).toHaveBeenCalledOnce();
+        expect(H.reconfigurePrimary).toHaveBeenCalledOnce();
         expect(context.interaction.editReply).toHaveBeenCalledWith(
             expect.objectContaining({ content: expect.stringContaining("interaction retention") }),
         );
@@ -37,6 +52,31 @@ describe("/reload_config interaction retention", () => {
     it("rolls back the config when campaign reconciliation cannot be persisted", async () => {
         H.reconcile.mockReset();
         H.reconcile.mockRejectedValue(new Error("synthetic disk failure"));
+        H.reconcileKeywords.mockReset();
+        H.ensureProposalService.mockReset();
+        H.reconfigureShadow.mockReset();
+        H.reconfigurePrimary.mockReset();
+        const previous = { githubPollMinutes: 60 } satisfies Config;
+        const next = { githubPollMinutes: 30 } satisfies Config;
+        const context = commandContext(previous, next);
+
+        await new ReloadConfigCommand().run(context);
+
+        expect(context.client.config).toBe(previous);
+        expect(context.client.poller.start).not.toHaveBeenCalled();
+        expect(H.ensureProposalService).not.toHaveBeenCalled();
+        expect(H.reconfigureShadow).not.toHaveBeenCalled();
+        expect(H.reconfigurePrimary).not.toHaveBeenCalled();
+        expect(context.interaction.editReply).toHaveBeenCalledWith(
+            expect.objectContaining({ content: expect.stringContaining("synthetic disk failure") }),
+        );
+    });
+
+    it("rolls back the config when keyword cooldown pruning cannot be persisted", async () => {
+        H.reconcile.mockReset();
+        H.reconcile.mockResolvedValue(undefined);
+        H.reconcileKeywords.mockReset();
+        H.reconcileKeywords.mockRejectedValue(new Error("keyword store failure"));
         H.ensureProposalService.mockReset();
         const previous = { githubPollMinutes: 60 } satisfies Config;
         const next = { githubPollMinutes: 30 } satisfies Config;
@@ -48,7 +88,7 @@ describe("/reload_config interaction retention", () => {
         expect(context.client.poller.start).not.toHaveBeenCalled();
         expect(H.ensureProposalService).not.toHaveBeenCalled();
         expect(context.interaction.editReply).toHaveBeenCalledWith(
-            expect.objectContaining({ content: expect.stringContaining("synthetic disk failure") }),
+            expect.objectContaining({ content: expect.stringContaining("keyword store failure") }),
         );
     });
 });

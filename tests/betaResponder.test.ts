@@ -5,6 +5,7 @@ import { BetaResponder } from "../src/features/betaResponder/betaResponder";
 import type { UserInteractionStore } from "../src/features/userInteractions/store";
 import type { LlmClassifier, ClassificationResult, ClassificationTask } from "../src/llm/classifier";
 import type { ClassificationLogger } from "../src/llm/classificationLogger";
+import type { TypeSafeShadowService } from "../src/llm/typesafeShadow";
 
 vi.mock("../src/features/betaClassifier/promptFile", () => ({
     loadBetaClassifierPrompt: vi.fn(async () => ({
@@ -30,6 +31,34 @@ describe("BetaResponder", () => {
     beforeEach(() => vi.useFakeTimers({ now: new Date("2026-08-12T06:00:00.000Z") }));
     afterEach(() => vi.useRealTimers());
 
+    it("shares the exact two-message-capped transcript task with shadow without changing KEEP", async () => {
+        const send = vi.fn(async () => ({ delete: vi.fn(async () => undefined) }) as unknown as Message);
+        let builtTask: ClassificationTask<"KEEP" | "DELETE"> | null = null;
+        const classifyLazy = vi.fn(async (_fallback, buildTask, _authorized, onTaskReady) => {
+            builtTask = await buildTask();
+            onTaskReady(builtTask);
+            return result("KEEP");
+        });
+        const handle = { marker: "shadow" };
+        const shadow = { begin: vi.fn(() => handle), complete: vi.fn() } as unknown as TypeSafeShadowService;
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactionStore(),
+            classifier(classifyLazy),
+            logger(),
+            shadow,
+        );
+
+        await responder.process(makeMessage(send));
+        await responder.drain();
+
+        expect(shadow.begin).toHaveBeenCalledWith(
+            expect.objectContaining({ taskType: "beta_greeting", task: builtTask }),
+        );
+        expect(shadow.complete).toHaveBeenCalledWith(handle, expect.objectContaining({ label: "KEEP" }));
+        expect(responder.getMetrics()).toMatchObject({ kept: 1, keep: 1 });
+    });
+
     it("sends one plain campaign greeting, records it, and deletes it after the configured delay", async () => {
         const deleted = vi.fn(async () => undefined);
         const send = vi.fn(async (_payload: GreetingPayload) => ({ delete: deleted }) as unknown as Message);
@@ -53,6 +82,21 @@ describe("BetaResponder", () => {
         await vi.advanceTimersByTimeAsync(44_999);
         expect(deleted).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(1);
+        expect(deleted).toHaveBeenCalledOnce();
+    });
+
+    it("uses operator greeting text while preserving mentions and deletion", async () => {
+        const deleted = vi.fn(async () => undefined);
+        const send = vi.fn(async (_payload: GreetingPayload) => ({ delete: deleted }) as unknown as Message);
+        const client = makeClient();
+        client.config.beta_classifier!.greeting_template = "Synthetic {user}: {announcements}";
+        const responder = new BetaResponder(client, interactionStore(), classifier(vi.fn()), logger());
+        await responder.process(makeMessage(send));
+        expect(send).toHaveBeenCalledWith({
+            content: "Synthetic <@user-1>: <#announcements-1>",
+            allowedMentions: { parse: [], users: ["user-1"] },
+        });
+        await vi.advanceTimersByTimeAsync(45_000);
         expect(deleted).toHaveBeenCalledOnce();
     });
 
@@ -110,7 +154,7 @@ describe("BetaResponder", () => {
         });
     });
 
-    it("leaves the deletion timer active when the relevance classifier returns DELETE", async () => {
+    it("keeps an immediate successful DELETE visible until 45 seconds after send", async () => {
         const deleted = vi.fn(async () => undefined);
         const send = vi.fn(async (_payload: GreetingPayload) => ({ delete: deleted }) as unknown as Message);
         const responder = new BetaResponder(
@@ -122,10 +166,37 @@ describe("BetaResponder", () => {
 
         await responder.process(makeMessage(send, { content: "Hello everyone" }));
         await responder.drain();
-        await vi.advanceTimersByTimeAsync(45_000);
+        await vi.advanceTimersByTimeAsync(44_999);
+
+        expect(deleted).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
 
         expect(deleted).toHaveBeenCalledOnce();
         expect(responder.getMetrics()).toMatchObject({ kept: 0, deleted: 1, keep: 0, delete: 1 });
+    });
+
+    it("deletes at successful DELETE completion when it finishes after minimum visibility", async () => {
+        const deleted = vi.fn(async () => undefined);
+        const send = vi.fn(async (_payload: GreetingPayload) => ({ delete: deleted }) as unknown as Message);
+        let resolveClassification!: (value: ClassificationResult<"KEEP" | "DELETE">) => void;
+        const provider = new Promise<ClassificationResult<"KEEP" | "DELETE">>(resolve => {
+            resolveClassification = resolve;
+        });
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactionStore(),
+            classifier(vi.fn(async (_fallback, buildTask) => (await buildTask(), provider))),
+            logger(),
+        );
+
+        await responder.process(makeMessage(send));
+        await vi.advanceTimersByTimeAsync(70_000);
+        expect(deleted).not.toHaveBeenCalled();
+
+        resolveClassification(result("DELETE"));
+        await responder.drain();
+
+        expect(deleted).toHaveBeenCalledOnce();
     });
 
     it("can keep the original greeting when a follow-up becomes relevant during the decision window", async () => {
@@ -237,7 +308,43 @@ describe("BetaResponder", () => {
         expect(requests[1]?.input).not.toContain("Second follow-up");
     });
 
-    it("does not keep a greeting when classification finishes after the deletion window", async () => {
+    it("builds only sanitized trigger and first-follow-up messages for Clef", async () => {
+        const send = vi.fn(async () => ({ delete: vi.fn(async () => undefined) }) as unknown as Message);
+        const requests: ClassificationTask<"KEEP" | "DELETE">[] = [];
+        const classifyLazy = vi.fn(async (_fallback, buildTask, _authorized, _ready, options) => {
+            const request = await buildTask();
+            if (request) requests.push(request);
+            expect(options).toEqual({ clefGreetingDeadlineAt: Date.now() + 240_000 });
+            return result("DELETE");
+        });
+        const responder = new BetaResponder(
+            makeClient({ retention: true, provider: "clef" }),
+            interactionStore(),
+            classifier(classifyLazy),
+            logger(),
+        );
+        await responder.process(makeMessage(send, { content: "Hello <@123456789012345678>" }));
+        await responder.drain();
+        await responder.process(
+            makeMessage(send, {
+                id: "message-2",
+                content: "Where can I download the Beta Streamer for the current Quest beta?",
+                createdTimestamp: 2,
+            }),
+        );
+        await responder.drain();
+        await responder.process(makeMessage(send, { id: "message-3", content: "ignored", createdTimestamp: 3 }));
+        await responder.drain();
+
+        expect(requests[1]?.clef).toEqual({
+            taskType: "beta_greeting",
+            messages: ["Hello @member", "Where can I download the Beta Streamer for the current Quest beta?"],
+        });
+        expect(requests[1]?.input).not.toContain("speaker=");
+        expect(requests).toHaveLength(2);
+    });
+
+    it("deletes at the 240-second cap when no decision completes", async () => {
         const deleted = vi.fn(async () => undefined);
         const send = vi.fn(async (_payload: GreetingPayload) => ({ delete: deleted }) as unknown as Message);
         let resolveClassification!: (value: ClassificationResult<"KEEP" | "DELETE">) => void;
@@ -256,7 +363,11 @@ describe("BetaResponder", () => {
         );
 
         await responder.process(makeMessage(send));
-        await vi.advanceTimersByTimeAsync(45_000);
+        await vi.advanceTimersByTimeAsync(239_999);
+        expect(deleted).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(deleted).toHaveBeenCalledOnce();
+
         resolveClassification(result("KEEP"));
         await responder.drain();
 
@@ -284,13 +395,67 @@ describe("BetaResponder", () => {
         );
 
         await responder.process(makeMessage(send));
-        vi.setSystemTime(new Date("2026-08-12T06:00:46.000Z"));
+        vi.setSystemTime(new Date("2026-08-12T06:04:01.000Z"));
         resolveClassification(result("KEEP"));
         await responder.drain();
         await vi.runOnlyPendingTimersAsync();
 
         expect(deleted).toHaveBeenCalledOnce();
         expect(responder.getMetrics()).toMatchObject({ kept: 0, ignoredLateKeeps: 1, deleted: 1 });
+    });
+
+    it("does not treat a failed inference fallback as an early successful DELETE", async () => {
+        const deleted = vi.fn(async () => undefined);
+        const send = vi.fn(async (_payload: GreetingPayload) => ({ delete: deleted }) as unknown as Message);
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactionStore(),
+            classifier(vi.fn(async (_fallback, buildTask) => (await buildTask(), result("DELETE", "timeout")))),
+            logger(),
+        );
+
+        await responder.process(makeMessage(send));
+        await responder.drain();
+        await vi.advanceTimersByTimeAsync(45_000);
+        expect(deleted).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(195_000);
+        expect(deleted).toHaveBeenCalledOnce();
+    });
+
+    it("lets the first follow-up decision supersede an earlier DELETE without a 45-second race", async () => {
+        const deleted = vi.fn(async () => undefined);
+        const send = vi.fn(async (_payload: GreetingPayload) => ({ delete: deleted }) as unknown as Message);
+        let resolveFollowUp!: (value: ClassificationResult<"KEEP" | "DELETE">) => void;
+        const followUp = new Promise<ClassificationResult<"KEEP" | "DELETE">>(resolve => {
+            resolveFollowUp = resolve;
+        });
+        let call = 0;
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactionStore(),
+            classifier(
+                vi.fn(async (_fallback, buildTask) => {
+                    await buildTask();
+                    return call++ === 0 ? result("DELETE") : followUp;
+                }),
+            ),
+            logger(),
+        );
+
+        await responder.process(makeMessage(send));
+        await responder.drain();
+        await vi.advanceTimersByTimeAsync(44_000);
+        await responder.process(makeMessage(send, { id: "message-2", content: "Direct USB fails" }));
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(deleted).not.toHaveBeenCalled();
+
+        resolveFollowUp(result("KEEP"));
+        await responder.drain();
+        await vi.advanceTimersByTimeAsync(194_000);
+
+        expect(deleted).not.toHaveBeenCalled();
+        expect(responder.getMetrics()).toMatchObject({ kept: 1, keep: 1, delete: 1 });
     });
 
     it("deletes pending greetings during graceful shutdown", async () => {
@@ -362,7 +527,7 @@ describe("BetaResponder", () => {
         await responder.process(makeMessage(send, { id: "message-2" }));
 
         expect(send).toHaveBeenCalledOnce();
-        await vi.advanceTimersByTimeAsync(45_000);
+        await vi.advanceTimersByTimeAsync(240_000);
         expect(deleted).toHaveBeenCalledOnce();
     });
 
@@ -393,7 +558,7 @@ describe("BetaResponder", () => {
         current = false;
         release();
         await responder.drain();
-        await vi.advanceTimersByTimeAsync(45_000);
+        await vi.advanceTimersByTimeAsync(240_000);
 
         expect(request).toBeNull();
         expect(deleted).toHaveBeenCalledOnce();
@@ -461,7 +626,7 @@ describe("BetaResponder", () => {
         };
         resolveClassification(result("KEEP"));
         await responder.drain();
-        await vi.advanceTimersByTimeAsync(45_000);
+        await vi.advanceTimersByTimeAsync(240_000);
 
         expect(deleted).toHaveBeenCalledOnce();
         expect(responder.getMetrics()).toMatchObject({ kept: 0, deleted: 1, retentionEnabled: false });
@@ -483,7 +648,7 @@ describe("BetaResponder", () => {
     });
 });
 
-function makeClient(options: { retention?: boolean } = {}): KrytenClient {
+function makeClient(options: { retention?: boolean; provider?: "fireworks" | "clef" } = {}): KrytenClient {
     return {
         config: {
             beta_classifier: {
@@ -499,8 +664,9 @@ function makeClient(options: { retention?: boolean } = {}): KrytenClient {
             llm_classifier: options.retention
                 ? {
                       enabled: true,
-                      provider: "fireworks",
-                      model: "accounts/fireworks/models/example",
+                      provider: options.provider ?? "fireworks",
+                      model:
+                          options.provider === "clef" ? "Cloudflare/clef-flash" : "accounts/fireworks/models/example",
                   }
                 : undefined,
         },
