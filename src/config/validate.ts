@@ -1,14 +1,18 @@
+import { renderCampaignTemplate } from "../utils/campaignTemplate";
 import type {
     AutoResponderConfig,
     BetaClassifierConfig,
     Config,
     CrosspostConfig,
     ImageFingerprintConfig,
+    KeywordAutoResponseRule,
+    KeywordAutoResponsesConfig,
     LlmClassifierConfig,
     ModerationConfig,
     ModerationTimeoutConfig,
     ProposalsConfig,
     TwitterConfig,
+    TypeSafeShadowConfig,
 } from "../types";
 import { validateStickyPosts } from "./stickyPosts";
 import { isRecord } from "../utils/isRecord";
@@ -33,6 +37,13 @@ const LLM_CLASSIFIER_NUMBER_FIELDS: ReadonlyArray<readonly [NumericKey<LlmClassi
     ["top_k", { integer: true, min: 1, max: 200 }],
     ["presence_penalty", { min: -2, max: 2 }],
     ["frequency_penalty", { min: -2, max: 2 }],
+];
+const TYPESAFE_SHADOW_NUMBER_FIELDS: ReadonlyArray<readonly [NumericKey<TypeSafeShadowConfig>, NumberOptions]> = [
+    ["timeout_ms", { integer: true, min: 100, max: 10_000 }],
+    ["max_concurrency", { integer: true, min: 1, max: 16 }],
+    ["max_queue_depth", { integer: true, min: 0, max: 1_000 }],
+    ["max_queue_age_ms", { integer: true, min: 100, max: 60_000 }],
+    ["max_requests_per_minute", { integer: true, min: 1, max: 1_200 }],
 ];
 
 export class ConfigValidationError extends Error {
@@ -506,11 +517,64 @@ function validateAutoResponder(input: JsonObject, issues: string[]): AutoRespond
     return out;
 }
 
+function validateKeywordAutoResponses(input: JsonObject, issues: string[]): KeywordAutoResponsesConfig {
+    const out: KeywordAutoResponsesConfig = {};
+    assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "keyword_auto_responses.enabled", issues));
+    const rawRules = input["rules"];
+    if (rawRules !== undefined) {
+        if (!Array.isArray(rawRules)) {
+            issues.push("keyword_auto_responses.rules must be an array");
+        } else {
+            const ids = new Set<string>();
+            out.rules = rawRules.flatMap((value, index): KeywordAutoResponseRule[] => {
+                const path = `keyword_auto_responses.rules[${index}]`;
+                if (!isRecord(value)) {
+                    issues.push(`${path} must be an object`);
+                    return [];
+                }
+                const id = optionalString(value, "id", `${path}.id`, issues);
+                const channelIds = optionalStringArray(value, "channel_ids", `${path}.channel_ids`, issues);
+                const keywords = optionalStringArray(value, "keywords", `${path}.keywords`, issues);
+                const response = optionalString(value, "response", `${path}.response`, issues);
+                if (!id || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) {
+                    issues.push(`${path}.id must be 1-64 lowercase letters, numbers, underscores, or hyphens`);
+                } else if (ids.has(id)) {
+                    issues.push(`${path}.id duplicates stable rule id '${id}'`);
+                } else {
+                    ids.add(id);
+                }
+                if (!channelIds?.length) issues.push(`${path}.channel_ids must not be empty`);
+                if (!keywords?.length) issues.push(`${path}.keywords must not be empty`);
+                if (keywords?.some(keyword => keyword.length > 100)) {
+                    issues.push(`${path}.keywords entries must be at most 100 characters`);
+                }
+                if (!response?.includes("{user}")) issues.push(`${path}.response must contain {user}`);
+                if (response && response.replaceAll("{user}", `<@${"9".repeat(20)}>`).length > 2_000) {
+                    issues.push(`${path}.response must be at most 2000 characters after substituting {user}`);
+                }
+                if (response && [...response.matchAll(/\{([^{}]+)\}/gu)].some(match => match[1] !== "user")) {
+                    issues.push(`${path}.response contains an unsupported placeholder`);
+                }
+                if (!id || !channelIds?.length || !keywords?.length || !response) return [];
+                return [{ id, channel_ids: channelIds, keywords, response }];
+            });
+        }
+    }
+    if (out.enabled && !out.rules?.length) {
+        issues.push("keyword_auto_responses.rules must not be empty when enabled");
+    }
+    return out;
+}
+
 function validateLlmClassifier(input: JsonObject, issues: string[]): LlmClassifierConfig {
     const out: LlmClassifierConfig = {};
     assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "llm_classifier.enabled", issues));
 
-    const provider = optionalEnum(input, "provider", "llm_classifier.provider", issues, ["fireworks"] as const);
+    const provider = optionalEnum(input, "provider", "llm_classifier.provider", issues, [
+        "fireworks",
+        "typesafe",
+        "clef",
+    ] as const);
     if (provider !== undefined) out.provider = provider;
 
     assignString(out, "model", optionalString(input, "model", "llm_classifier.model", issues));
@@ -529,10 +593,36 @@ function validateLlmClassifier(input: JsonObject, issues: string[]): LlmClassifi
         issues.push("llm_classifier.api_key_env must name a FIREWORKS_* variable for the Fireworks provider");
     }
 
+    if (provider === "typesafe") {
+        if (out.model !== "jev-1.13.0") issues.push("llm_classifier.model must be jev-1.13.0 for TypeSafe");
+        if (out.api_key_env && out.api_key_env !== "TYPESAFE_API_KEY")
+            issues.push("llm_classifier.api_key_env must be TYPESAFE_API_KEY for TypeSafe");
+    }
+    if (provider === "clef") {
+        if (out.model !== "Cloudflare/clef-flash")
+            issues.push("llm_classifier.model must be Cloudflare/clef-flash for Clef");
+        if (out.api_key_env) issues.push("llm_classifier.api_key_env is not supported for Clef");
+    }
+
     assignOptionalNumbers(out, input, "llm_classifier", issues, LLM_CLASSIFIER_NUMBER_FIELDS);
 
     if (out.enabled && !out.provider) issues.push("llm_classifier.provider is required when enabled");
     if (out.enabled && !out.model) issues.push("llm_classifier.model is required when enabled");
+    return out;
+}
+
+function validateTypeSafeShadow(input: JsonObject, issues: string[]): TypeSafeShadowConfig {
+    const out: TypeSafeShadowConfig = {};
+    assignBoolean(out, "enabled", optionalBoolean(input, "enabled", "typesafe_shadow.enabled", issues));
+    assignString(
+        out,
+        "log_channel_id",
+        optionalString(input, "log_channel_id", "typesafe_shadow.log_channel_id", issues),
+    );
+    assignString(out, "model", optionalString(input, "model", "typesafe_shadow.model", issues));
+    assignOptionalNumbers(out, input, "typesafe_shadow", issues, TYPESAFE_SHADOW_NUMBER_FIELDS);
+    if (out.enabled && !out.log_channel_id) issues.push("typesafe_shadow.log_channel_id is required when enabled");
+    if (out.model && out.model !== "jev-1.13.0") issues.push("typesafe_shadow.model must be jev-1.13.0");
     return out;
 }
 
@@ -567,7 +657,7 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
             "target_greeting_delete_after_seconds",
             "beta_classifier.target_greeting_delete_after_seconds",
             issues,
-            { integer: true, min: 5, max: 3_600 },
+            { integer: true, min: 45, max: 3_600 },
         ),
     );
     assignString(
@@ -594,6 +684,32 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         "excluded_role_ids",
         optionalStringArray(input, "excluded_role_ids", "beta_classifier.excluded_role_ids", issues),
     );
+    assignString(
+        out,
+        "target_channel_id",
+        optionalString(input, "target_channel_id", "beta_classifier.target_channel_id", issues),
+    );
+    for (const field of ["greeting_template", "routing_template"] as const) {
+        const template = optionalString(input, field, `beta_classifier.${field}`, issues);
+        if (input[field] !== undefined && template === undefined)
+            issues.push(`beta_classifier.${field} must not be empty`);
+        if (template !== undefined) {
+            try {
+                // Discord snowflakes can reach 20 digits; budget every mention at that width.
+                const snowflake = "9".repeat(20);
+                renderCampaignTemplate(template, {
+                    user: `<@${snowflake}>`,
+                    target: out.target_channel_id ? `<#${snowflake}>` : undefined,
+                    announcements: out.announcements_channel_id ? `<#${snowflake}>` : undefined,
+                });
+                out[field] = template;
+            } catch {
+                issues.push(
+                    `beta_classifier.${field} must be a nonempty template using only {user}, {target}, {announcements}, with referenced channel IDs configured and at most 2000 characters after expansion`,
+                );
+            }
+        }
+    }
     const campaignId = optionalString(input, "campaign_id", "beta_classifier.campaign_id", issues);
     if (campaignId && !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(campaignId)) {
         issues.push("beta_classifier.campaign_id must be 1-64 letters, numbers, dots, underscores, or hyphens");
@@ -604,11 +720,6 @@ function validateBetaClassifier(input: JsonObject, issues: string[]): BetaClassi
         out,
         "campaign_started_at",
         optionalIsoTimestamp(input, "campaign_started_at", "beta_classifier.campaign_started_at", issues),
-    );
-    assignString(
-        out,
-        "target_channel_id",
-        optionalString(input, "target_channel_id", "beta_classifier.target_channel_id", issues),
     );
     assignString(
         out,
@@ -755,8 +866,14 @@ export function validateConfig(value: unknown): Config {
     if (moderation) out.moderation = validateModeration(moderation, issues);
     const autoResponder = optionalSection(value, "auto_responder", "auto_responder", issues);
     if (autoResponder) out.auto_responder = validateAutoResponder(autoResponder, issues);
+    const keywordAutoResponses = optionalSection(value, "keyword_auto_responses", "keyword_auto_responses", issues);
+    if (keywordAutoResponses) {
+        out.keyword_auto_responses = validateKeywordAutoResponses(keywordAutoResponses, issues);
+    }
     const llmClassifier = optionalSection(value, "llm_classifier", "llm_classifier", issues);
     if (llmClassifier) out.llm_classifier = validateLlmClassifier(llmClassifier, issues);
+    const typeSafeShadow = optionalSection(value, "typesafe_shadow", "typesafe_shadow", issues);
+    if (typeSafeShadow) out.typesafe_shadow = validateTypeSafeShadow(typeSafeShadow, issues);
     const betaClassifier = optionalSection(value, "beta_classifier", "beta_classifier", issues);
     if (betaClassifier) out.beta_classifier = validateBetaClassifier(betaClassifier, issues);
     if (out.beta_classifier?.target_greeting_retention_enabled && !out.llm_classifier?.enabled) {

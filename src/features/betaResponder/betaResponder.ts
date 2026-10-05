@@ -1,3 +1,4 @@
+import { renderCampaignTemplate } from "../../utils/campaignTemplate";
 import { TextChannel, type Message } from "discord.js";
 import type { KrytenClient } from "../../classes/client";
 import type { BetaClassifierConfig, LlmClassifierConfig } from "../../types";
@@ -11,8 +12,11 @@ import {
     type ClassifierCampaign,
     type UserInteractionStore,
 } from "../userInteractions/store";
+import type { ShadowComparisonHandle, TypeSafeShadowService } from "../../llm/typesafeShadow";
+import { sanitizeSensitiveText } from "../../llm/privacy";
 
-const DEFAULT_DELETE_AFTER_SECONDS = 45;
+const MINIMUM_VISIBILITY_MS = 45_000;
+const DECISION_WINDOW_MS = 240_000;
 const RETENTION_LABELS = ["KEEP", "DELETE"] as const;
 const MAX_RETENTION_CONTEXT_MESSAGES = 2;
 const MAX_RETENTION_CONTEXT_CHARACTERS = 10_000;
@@ -26,7 +30,8 @@ interface ActiveGreeting {
     readonly betaConfig: BetaClassifierConfig;
     readonly campaign: ClassifierCampaign;
     readonly messages: Message[];
-    readonly timer: NodeJS.Timeout;
+    timer: NodeJS.Timeout;
+    readonly minimumDeleteAt: number;
     readonly expiresAt: number;
     readonly llmConfig?: LlmClassifierConfig;
     classificationInFlight: boolean;
@@ -82,6 +87,7 @@ export class BetaResponder {
         private readonly interactions: UserInteractionStore,
         private readonly classifier: LlmClassifier,
         private readonly classificationLogger: ClassificationLogger,
+        private readonly typeSafeShadow?: TypeSafeShadowService,
     ) {}
 
     async process(message: Message): Promise<void> {
@@ -138,6 +144,7 @@ export class BetaResponder {
         if (active) {
             if (this.retentionIsAuthorized(active)) {
                 if (active.messages.length >= MAX_RETENTION_CONTEXT_MESSAGES) return;
+                this.scheduleDeletion(active, active.expiresAt);
                 active.messages.push(message);
                 if (active.classificationInFlight) active.rerunTarget = message;
                 else this.startClassification(active, message);
@@ -153,10 +160,16 @@ export class BetaResponder {
         try {
             const greeting = await (message.channel as TextChannel).send({
                 content:
-                    `Welcome, <@${userId}>! Direct USB support and the 15-minute stream restart are still in Beta. ` +
-                    `To opt in, switch Virtual Desktop on your Quest to the **BETA** release channel; a separate ` +
-                    `Beta Streamer installation is no longer required. For the latest information, check ` +
-                    `<#${config.announcements_channel_id}>.`,
+                    config.greeting_template !== undefined
+                        ? renderCampaignTemplate(config.greeting_template, {
+                              user: `<@${userId}>`,
+                              target: config.target_channel_id ? `<#${config.target_channel_id}>` : undefined,
+                              announcements: `<#${config.announcements_channel_id}>`,
+                          })
+                        : `Welcome, <@${userId}>! Direct USB support and the 15-minute stream restart are still in Beta. ` +
+                          `To opt in, switch Virtual Desktop on your Quest to the **BETA** release channel; a separate ` +
+                          `Beta Streamer installation is no longer required. For the latest information, check ` +
+                          `<#${config.announcements_channel_id}>.`,
                 allowedMentions: { parse: [], users: [userId] },
             });
             this.metrics.greetingsSent++;
@@ -215,9 +228,15 @@ export class BetaResponder {
         campaign: ClassifierCampaign,
         generation: number,
     ): ActiveGreeting {
-        const afterSeconds = config.target_greeting_delete_after_seconds ?? DEFAULT_DELETE_AFTER_SECONDS;
-        const createdAt = Date.now();
-        const deleteAfterMs = afterSeconds * 1_000;
+        const sentAt = Date.now();
+        const retentionPending = Boolean(
+            config.target_greeting_retention_enabled &&
+            config.target_greeting_prompt_file &&
+            this.client.config.llm_classifier?.enabled,
+        );
+        const deleteAfterMs = retentionPending
+            ? DECISION_WINDOW_MS
+            : Math.max(MINIMUM_VISIBILITY_MS, (config.target_greeting_delete_after_seconds ?? 45) * 1_000);
         const userId = source.author.id;
         const holder: { active?: ActiveGreeting } = {};
         const timer = setTimeout(() => {
@@ -232,7 +251,8 @@ export class BetaResponder {
             campaign,
             messages: [source],
             timer,
-            expiresAt: createdAt + deleteAfterMs,
+            minimumDeleteAt: sentAt + MINIMUM_VISIBILITY_MS,
+            expiresAt: sentAt + deleteAfterMs,
             llmConfig: this.client.config.llm_classifier,
             classificationInFlight: false,
         };
@@ -262,10 +282,32 @@ export class BetaResponder {
 
     private async classify(active: ActiveGreeting, target: Message): Promise<void> {
         this.metrics.submitted++;
+        let shadowHandle: ShadowComparisonHandle<(typeof RETENTION_LABELS)[number]> | null = null;
         const result = await this.classifier.classifyLazy(
             "DELETE",
             async () => {
                 if (!this.retentionIsAuthorized(active)) return null;
+                if (active.llmConfig?.provider === "clef") {
+                    const raw = active.messages
+                        .slice(0, MAX_RETENTION_CONTEXT_MESSAGES)
+                        .map(message => message.content);
+                    if (
+                        raw.some(message => message.length > 4_000) ||
+                        raw.reduce((total, message) => total + message.length, 0) > MAX_RETENTION_CONTEXT_CHARACTERS
+                    )
+                        return null;
+                    const messages = raw.map(message =>
+                        sanitizeSensitiveText(message, { [target.channelId]: "beta-testing" }),
+                    );
+                    if (messages.some(message => !message.trim() || message.length > 4_000)) return null;
+                    return {
+                        systemInstruction: "Clef beta greeting policy v1",
+                        input: messages.join("\n\n"),
+                        allowedLabels: RETENTION_LABELS,
+                        fallbackLabel: "DELETE",
+                        clef: { taskType: "beta_greeting", messages },
+                    };
+                }
                 let prompt;
                 try {
                     prompt = await loadBetaClassifierPrompt(active.betaConfig.target_greeting_prompt_file!);
@@ -285,14 +327,29 @@ export class BetaResponder {
                 };
             },
             () => this.retentionIsAuthorized(active),
+            task => {
+                shadowHandle =
+                    this.typeSafeShadow?.begin({
+                        taskType: "beta_greeting",
+                        message: target,
+                        task,
+                        deadlineAt: active.expiresAt,
+                        isAuthorized: () => this.retentionIsAuthorized(active),
+                        isLogAuthorized: () =>
+                            this.configurationIsCurrent(active) &&
+                            this.interactions.isUserGeneration(active.userId, active.generation),
+                    }) ?? null;
+            },
+            active.llmConfig?.provider === "clef" ? { clefGreetingDeadlineAt: active.expiresAt } : undefined,
         );
+        this.typeSafeShadow?.complete(shadowHandle, result);
         if (result.status !== "ok") this.metrics.classifierFallbacks++;
         if (result.label === "KEEP") this.metrics.keep++;
         else this.metrics.delete++;
 
-        let keepApplied = false;
+        let decisionApplied = false;
         const authorized = () =>
-            keepApplied
+            decisionApplied
                 ? this.configurationIsCurrent(active) &&
                   this.interactions.isUserGeneration(active.userId, active.generation)
                 : this.retentionIsAuthorized(active);
@@ -302,9 +359,17 @@ export class BetaResponder {
             clearTimeout(active.timer);
             if (this.activeGreetings.get(active.userId) === active) this.activeGreetings.delete(active.userId);
             this.metrics.kept++;
-            keepApplied = true;
+            decisionApplied = true;
         } else if (result.status === "ok" && result.label === "KEEP") {
             this.metrics.ignoredStaleKeeps++;
+        } else if (
+            result.status === "ok" &&
+            result.label === "DELETE" &&
+            this.retentionIsAuthorized(active) &&
+            !active.rerunTarget
+        ) {
+            decisionApplied = true;
+            this.scheduleDeletion(active, Math.max(active.minimumDeleteAt, Date.now()));
         }
         await this.classificationLogger.log(target, result, authorized, { includeRawOutput: false });
     }
@@ -354,6 +419,17 @@ export class BetaResponder {
         active.deletion = deletion;
         this.pendingDeletions.add(deletion);
         return deletion;
+    }
+
+    private scheduleDeletion(active: ActiveGreeting, deleteAt: number): void {
+        clearTimeout(active.timer);
+        const delayMs = Math.max(0, deleteAt - Date.now());
+        if (delayMs === 0) {
+            this.beginDeletion(active);
+            return;
+        }
+        active.timer = setTimeout(() => this.beginDeletion(active), delayMs);
+        active.timer.unref();
     }
 
     private async deleteGreeting(greeting: Message): Promise<void> {

@@ -8,11 +8,13 @@ import { AutoResponder } from "../features/autoresponder/autoResponder";
 import { BetaClassifier } from "../features/betaClassifier/betaClassifier";
 import { BetaResponder } from "../features/betaResponder/betaResponder";
 import { handleTwitterLinks } from "../features/twitter/twitterHandler";
-import { LlmClassifier } from "../llm/classifier";
+import { createLlmClassifier, type LlmClassifier } from "../llm/classifier";
 import { ClassificationLogger } from "../llm/classificationLogger";
 import { channelOrParentListed } from "../utils/channels";
 import { UserInteractionStore } from "../features/userInteractions/store";
 import { StickyPosts } from "../features/stickyPosts/handler";
+import { TypeSafeShadowClient, TypeSafeShadowService } from "../llm/typesafeShadow";
+import { KeywordAutoResponder } from "../features/keywordAutoResponses/keywordAutoResponder";
 
 // Stateful handlers are built once; the registry is the single place to wire
 // features into the message pipeline.
@@ -26,17 +28,21 @@ let betaResponder: BetaResponder | null = null;
 let userInteractions: UserInteractionStore | null = null;
 let features: Feature[] | null = null;
 let stickyPosts: StickyPosts | null = null;
+let typeSafeShadow: TypeSafeShadowService | null = null;
+let keywordAutoResponder: KeywordAutoResponder | null = null;
 
 function build(client: KrytenClient): void {
     stickyPosts = new StickyPosts(client);
     crosspost = new CrosspostHandler(client);
     imageFingerprint = new ImageFingerprintHandler(client);
     userInteractions = new UserInteractionStore(client);
+    keywordAutoResponder = new KeywordAutoResponder(client, userInteractions);
     autoResponder = new AutoResponder(client, userInteractions);
-    llmClassifier = new LlmClassifier(() => client.config.llm_classifier);
+    llmClassifier = createLlmClassifier(() => client.config.llm_classifier);
     classificationLogger = new ClassificationLogger(client);
-    betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger, userInteractions);
-    betaResponder = new BetaResponder(client, userInteractions, llmClassifier, classificationLogger);
+    typeSafeShadow = new TypeSafeShadowService(client, new TypeSafeShadowClient(() => client.config.typesafe_shadow));
+    betaClassifier = new BetaClassifier(client, llmClassifier, classificationLogger, userInteractions, typeSafeShadow);
+    betaResponder = new BetaResponder(client, userInteractions, llmClassifier, classificationLogger, typeSafeShadow);
 
     features = [
         {
@@ -53,6 +59,14 @@ function build(client: KrytenClient): void {
             name: "mod-ping",
             enabled: c => !!c.config.moderation?.mod_role_id,
             onMessage: (message, c) => handleModPing(message, c),
+        },
+        {
+            name: "keyword-auto-responder",
+            enabled: c =>
+                (c.config.keyword_auto_responses?.enabled ?? false) && !!c.config.keyword_auto_responses?.rules?.length,
+            onMessage: async message => {
+                await keywordAutoResponder!.process(message);
+            },
         },
         {
             name: "beta-classifier",
@@ -95,12 +109,13 @@ function ensure(client: KrytenClient): Feature[] {
 
 /**
  * Eagerly construct all stateful feature handlers. An unreadable interaction
- * store or missing encryption key is fatal when the greeter or a persistent
- * classifier is enabled.
+ * store or missing encryption key is fatal when the greeter, keyword auto
+ * responses, or a persistent classifier is enabled.
  */
 export async function initFeatures(client: KrytenClient): Promise<void> {
     ensure(client);
     await userInteractions!.reconcileClassifierCampaigns();
+    await userInteractions!.reconcileKeywordCooldowns();
 }
 
 /** Crosspost handler accessor (used by the health endpoint for metrics). */
@@ -141,9 +156,19 @@ export function getBetaResponder(client: KrytenClient): BetaResponder {
     return betaResponder!;
 }
 
+export function getTypeSafeShadowService(client: KrytenClient): TypeSafeShadowService {
+    ensure(client);
+    return typeSafeShadow!;
+}
+
 export function getUserInteractionStore(client: KrytenClient): UserInteractionStore {
     ensure(client);
     return userInteractions!;
+}
+
+export function getKeywordAutoResponder(client: KrytenClient): KeywordAutoResponder {
+    ensure(client);
+    return keywordAutoResponder!;
 }
 
 export function getStickyPosts(client: KrytenClient): StickyPosts {

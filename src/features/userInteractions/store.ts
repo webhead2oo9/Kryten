@@ -12,6 +12,7 @@ const GREETING_RETENTION_SECONDS = 30 * 24 * 60 * 60;
 const MAX_TIMER_DELAY_MS = 2_147_000_000;
 const CAMPAIGN_PURGE_RETRY_MS = 60_000;
 export const CLASSIFIER_CAMPAIGN_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+export const KEYWORD_COOLDOWN_MS = 24 * 60 * 60 * 1_000;
 export const BETA_CLASSIFIER_ID = "beta";
 export const BETA_GREETING_ID = "beta";
 
@@ -59,6 +60,15 @@ export interface CampaignGreetingSnapshot {
     record?: CampaignGreetingRecord;
     generation: number;
 }
+
+export interface KeywordCooldownClaim {
+    readonly userId: string;
+    readonly ruleId: string;
+    readonly respondedAt: number;
+    readonly generation: number;
+}
+
+export type KeywordCooldownAdmission = { status: "acquired"; claim: KeywordCooldownClaim } | { status: "cooldown" };
 
 export function classifierCampaignIsActive(campaign: ClassifierCampaign, now = Date.now()): boolean {
     const startedAt = Date.parse(campaign.startedAt);
@@ -131,6 +141,77 @@ export class UserInteractionStore {
             this.dirty = true;
             this.scheduleSave();
             return true;
+        });
+    }
+
+    /** Offline import: preserve all other state; normal startup owns retention pruning. */
+    async seedCampaignGreetings(userIds: readonly string[], campaignId: string): Promise<void> {
+        await this.exclusive(async () => {
+            const campaign = betaCampaign(this.client);
+            if (!campaign || campaign.campaignId !== campaignId || !classifierCampaignIsActive(campaign)) {
+                throw new Error("greeting import requires the active configured campaign");
+            }
+            const nextRecords = new Map(this.records);
+            for (const userId of userIds) {
+                if (!/^[1-9][0-9]{16,19}$/.test(userId) || this.legacyRecords.has(userId)) {
+                    throw new Error("invalid or legacy greeting import record");
+                }
+                const user = { ...(nextRecords.get(userId) ?? {}) };
+                const greetings = user["campaignGreetings"];
+                if (greetings !== undefined && !isRecord(greetings)) throw new Error("invalid greeting container");
+                const existing = isRecord(greetings) ? greetings[BETA_GREETING_ID] : undefined;
+                if (isRecord(existing) && existing["campaignId"] === campaignId) continue;
+                user["campaignGreetings"] = { ...greetings, [BETA_GREETING_ID]: { campaignId } };
+                nextRecords.set(userId, user);
+            }
+            await this.persist(nextRecords);
+            this.records = nextRecords;
+            this.dirty = false;
+        });
+    }
+
+    async claimKeywordCooldown(userId: string, ruleId: string, now = Date.now()): Promise<KeywordCooldownAdmission> {
+        const generation = this.generation(userId);
+        return this.exclusive(async () => {
+            if (this.generation(userId) !== generation) return { status: "cooldown" };
+            const current = keywordCooldowns(this.records.get(userId));
+            const lastResponse = current[ruleId];
+            if (lastResponse !== undefined && now - lastResponse < KEYWORD_COOLDOWN_MS) {
+                return { status: "cooldown" };
+            }
+            const nextRecords = new Map(this.records);
+            const user = { ...(nextRecords.get(userId) ?? {}) };
+            user["keywordCooldowns"] = { ...current, [ruleId]: now };
+            nextRecords.set(userId, user);
+            const retainedRecords = this.retained(nextRecords, now);
+            await this.persist(retainedRecords);
+            this.records = retainedRecords;
+            this.dirty = false;
+            return {
+                status: "acquired",
+                claim: { userId, ruleId, respondedAt: now, generation },
+            };
+        });
+    }
+
+    async releaseKeywordCooldown(claim: KeywordCooldownClaim): Promise<void> {
+        await this.exclusive(async () => {
+            if (this.generation(claim.userId) !== claim.generation) return;
+            const original = this.records.get(claim.userId);
+            const current = keywordCooldowns(original);
+            if (current[claim.ruleId] !== claim.respondedAt) return;
+            const nextRecords = new Map(this.records);
+            const user = { ...(original ?? {}) };
+            const cooldowns = { ...current };
+            delete cooldowns[claim.ruleId];
+            if (Object.keys(cooldowns).length) user["keywordCooldowns"] = cooldowns;
+            else delete user["keywordCooldowns"];
+            if (Object.keys(user).length) nextRecords.set(claim.userId, user);
+            else nextRecords.delete(claim.userId);
+            const retainedRecords = this.retained(nextRecords);
+            await this.persist(retainedRecords);
+            this.records = retainedRecords;
+            this.dirty = false;
         });
     }
 
@@ -259,6 +340,19 @@ export class UserInteractionStore {
         this.scheduleCampaignExpiry(campaign);
     }
 
+    async reconcileKeywordCooldowns(now = Date.now()): Promise<void> {
+        await this.exclusive(async () => {
+            this.assertUsableWhenRequired();
+            const nextRecords = pruneRecords(this.records, betaCampaign(this.client), now);
+            const changed = !mapsEqual(this.records, nextRecords);
+            if (changed || this.dirty) {
+                await this.persist(nextRecords);
+                this.records = nextRecords;
+                this.dirty = false;
+            }
+        });
+    }
+
     async flushNow(): Promise<void> {
         if (this.saveTimer) {
             clearTimeout(this.saveTimer);
@@ -304,7 +398,8 @@ export class UserInteractionStore {
         return Boolean(
             this.client.config.auto_responder?.random_greeting_channel_id ||
             this.client.config.beta_classifier?.enabled ||
-            this.client.config.beta_classifier?.target_greeting_enabled,
+            this.client.config.beta_classifier?.target_greeting_enabled ||
+            this.client.config.keyword_auto_responses?.enabled,
         );
     }
 
@@ -389,8 +484,11 @@ export class UserInteractionStore {
         this.campaignExpiryTimer.unref();
     }
 
-    private retained(records: ReadonlyMap<string, Record<string, unknown>>): Map<string, Record<string, unknown>> {
-        return pruneRecords(records, betaCampaign(this.client));
+    private retained(
+        records: ReadonlyMap<string, Record<string, unknown>>,
+        now = Date.now(),
+    ): Map<string, Record<string, unknown>> {
+        return pruneRecords(records, betaCampaign(this.client), now);
     }
 
     private async persist(
@@ -483,6 +581,15 @@ function campaignGreetingRecord(
     return { campaignId: candidate["campaignId"] };
 }
 
+function keywordCooldowns(value: Record<string, unknown> | undefined): Record<string, number> {
+    if (!value || !isRecord(value["keywordCooldowns"])) return {};
+    const cooldowns: Record<string, number> = {};
+    for (const [ruleId, respondedAt] of Object.entries(value["keywordCooldowns"])) {
+        if (typeof respondedAt === "number" && Number.isFinite(respondedAt)) cooldowns[ruleId] = respondedAt;
+    }
+    return cooldowns;
+}
+
 function classifierRunKey(classifierId: string, userId: string): string {
     return `${classifierId}\u0000${userId}`;
 }
@@ -490,9 +597,11 @@ function classifierRunKey(classifierId: string, userId: string): string {
 function pruneRecords(
     source: ReadonlyMap<string, Record<string, unknown>>,
     beta: ClassifierCampaign | null,
+    now = Date.now(),
 ): Map<string, Record<string, unknown>> {
     const output = new Map<string, Record<string, unknown>>();
-    const greetingCutoff = Math.floor(Date.now() / 1_000) - GREETING_RETENTION_SECONDS;
+    const greetingCutoff = Math.floor(now / 1_000) - GREETING_RETENTION_SECONDS;
+    const keywordCutoff = now - KEYWORD_COOLDOWN_MS;
     const betaActive = beta ? classifierCampaignIsActive(beta) : false;
     for (const [userId, original] of source) {
         const record = { ...original };
@@ -530,6 +639,14 @@ function pruneRecords(
             }
             if (Object.keys(greetings).length) record["campaignGreetings"] = greetings;
             else delete record["campaignGreetings"];
+        }
+        if (isRecord(record["keywordCooldowns"])) {
+            const cooldowns = keywordCooldowns(record);
+            for (const [ruleId, respondedAt] of Object.entries(cooldowns)) {
+                if (respondedAt <= keywordCutoff || respondedAt > now) delete cooldowns[ruleId];
+            }
+            if (Object.keys(cooldowns).length) record["keywordCooldowns"] = cooldowns;
+            else delete record["keywordCooldowns"];
         }
         if (Object.keys(record).length) output.set(userId, record);
     }

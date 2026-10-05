@@ -74,6 +74,17 @@
         "store_path": "./data/user_interactions.json",
         "encryption_key_env": "USER_INTERACTIONS_ENCRYPTION_KEY"
     },
+    "keyword_auto_responses": {
+        "enabled": false,
+        "rules": [
+            {
+                "id": "release-status",
+                "channel_ids": ["YOUR_SUPPORT_CHANNEL_ID_HERE"],
+                "keywords": ["release status", "status update"],
+                "response": "Hi {user}! The current status is available in the linked announcement."
+            }
+        ]
+    },
     "llm_classifier": {
         "enabled": false,
         "provider": "fireworks",
@@ -90,6 +101,16 @@
         "top_k": 40,
         "presence_penalty": 0,
         "frequency_penalty": 0
+    },
+    "typesafe_shadow": {
+        "enabled": false,
+        "log_channel_id": "YOUR_TYPESAFE_SHADOW_LOG_CHANNEL_ID_HERE",
+        "model": "jev-1.13.0",
+        "timeout_ms": 5000,
+        "max_concurrency": 2,
+        "max_queue_depth": 25,
+        "max_queue_age_ms": 10000,
+        "max_requests_per_minute": 60
     },
     "beta_classifier": {
         "enabled": false,

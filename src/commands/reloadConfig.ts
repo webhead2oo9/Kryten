@@ -2,7 +2,12 @@ import { SlashCommandBuilder } from "discord.js";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
 import { ensureProposalService } from "../handlers/proposalHandler";
-import { getStickyPosts, getUserInteractionStore } from "../handlers/messageHandler";
+import {
+    getLlmClassifier,
+    getStickyPosts,
+    getTypeSafeShadowService,
+    getUserInteractionStore,
+} from "../handlers/messageHandler";
 
 const command_data = new SlashCommandBuilder()
     .setName("reload_config")
@@ -24,7 +29,9 @@ export default class extends Command {
         const previousLoadFailed = ctx.client.configLoadFailed;
         try {
             ctx.client.loadConfig();
-            await getUserInteractionStore(ctx.client).reconcileClassifierCampaigns();
+            const interactions = getUserInteractionStore(ctx.client);
+            await interactions.reconcileClassifierCampaigns();
+            await interactions.reconcileKeywordCooldowns();
         } catch (error) {
             ctx.client.config = previousConfig;
             ctx.client.configLoadFailed = previousLoadFailed;
@@ -38,6 +45,8 @@ export default class extends Command {
         // existence. Re-apply so config changes don't need a restart.
         ctx.client.poller.start();
         ensureProposalService(ctx.client);
+        getLlmClassifier(ctx.client).reconfigure();
+        getTypeSafeShadowService(ctx.client).reconfigure();
 
         try {
             await getStickyPosts(ctx.client).reload();

@@ -6,7 +6,9 @@ import {
     getAutoResponder,
     getBetaClassifier,
     getBetaResponder,
+    getTypeSafeShadowService,
     getImageFingerprintHandler,
+    getKeywordAutoResponder,
     getStickyPosts,
     handleMessage,
     handleMessageDelete,
@@ -193,14 +195,20 @@ async function shutdown(signal: string): Promise<void> {
     try {
         client.poller.stop();
         client.proposalService?.stop();
-        await getStickyPosts(client).stop(5_000);
+        await Promise.all([getStickyPosts(client).stop(5_000), getKeywordAutoResponder(client).stop(5_000)]);
         getImageFingerprintHandler(client).stop();
         const betaClassifier = getBetaClassifier(client);
         const betaResponder = getBetaResponder(client);
         healthServer?.close();
         // Keep Discord REST authentication available for bounded greeting
         // deletion retries, then stop the gateway before flushing state.
-        await stopBetaFeatures(betaClassifier, betaResponder, () => client.destroy(), 5_000);
+        await stopBetaFeatures(
+            betaClassifier,
+            betaResponder,
+            getTypeSafeShadowService(client),
+            () => client.destroy(),
+            5_000,
+        );
         // Flush debounced interaction state before the unref'd timer dies.
         await Promise.race([
             getAutoResponder(client).flushNow(),

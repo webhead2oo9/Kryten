@@ -14,9 +14,13 @@ describe("stopBetaFeatures", () => {
         const betaResponder = {
             stop: vi.fn(async () => responderStopped),
         };
+        const typeSafeShadow = {
+            close: vi.fn(),
+            drain: vi.fn(async () => undefined),
+        };
         const destroyClient = vi.fn(async () => undefined);
 
-        const stopping = stopBetaFeatures(betaClassifier, betaResponder, destroyClient, 5_000);
+        const stopping = stopBetaFeatures(betaClassifier, betaResponder, typeSafeShadow, destroyClient, 5_000);
         await vi.waitFor(() => expect(betaResponder.stop).toHaveBeenCalledOnce());
         expect(destroyClient).not.toHaveBeenCalled();
 
@@ -26,5 +30,7 @@ describe("stopBetaFeatures", () => {
         expect(destroyClient).toHaveBeenCalledOnce();
         expect(betaClassifier.stop).toHaveBeenCalledOnce();
         expect(betaClassifier.drain).toHaveBeenCalledOnce();
+        expect(typeSafeShadow.close).toHaveBeenCalledOnce();
+        expect(typeSafeShadow.drain).toHaveBeenCalledOnce();
     });
 });
