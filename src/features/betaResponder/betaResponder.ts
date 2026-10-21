@@ -14,6 +14,7 @@ import {
 } from "../userInteractions/store";
 import type { ShadowComparisonHandle, TypeSafeShadowService } from "../../llm/typesafeShadow";
 import { sanitizeSensitiveText } from "../../llm/privacy";
+import { memberHasAnyRole, memberHasStaffRole } from "../../utils/staff";
 
 const MINIMUM_VISIBILITY_MS = 45_000;
 const DECISION_WINDOW_MS = 240_000;
@@ -136,6 +137,7 @@ export class BetaResponder {
         const config = this.client.config.beta_classifier;
         if (!config?.target_greeting_enabled || message.author.bot) return;
         if (message.channelId !== config.target_channel_id || !config.announcements_channel_id) return;
+        if (!this.memberIsEligible(message, config)) return;
         const campaign = this.campaign(config.campaign_id, config.campaign_started_at);
         if (!campaign || !classifierCampaignIsActive(campaign)) return;
 
@@ -174,7 +176,7 @@ export class BetaResponder {
             });
             this.metrics.greetingsSent++;
             const activeGreeting = this.trackGreeting(greeting, message, config, campaign, snapshot.generation);
-            if (this.stopped) {
+            if (!this.isAuthorized(message, config, campaign)) {
                 this.beginDeletion(activeGreeting);
                 return;
             }
@@ -200,12 +202,21 @@ export class BetaResponder {
         return { classifierId: BETA_GREETING_ID, campaignId, startedAt };
     }
 
+    private memberIsEligible(message: Message, config: BetaClassifierConfig): boolean {
+        return (
+            !!message.member &&
+            !memberHasStaffRole(message.member, this.client.config) &&
+            !memberHasAnyRole(message.member, config.excluded_role_ids ?? [])
+        );
+    }
+
     private isAuthorized(message: Message, config: BetaClassifierConfig, campaign: ClassifierCampaign): boolean {
         return (
             !this.stopped &&
             this.client.config.beta_classifier === config &&
             config.target_greeting_enabled === true &&
             message.channelId === config.target_channel_id &&
+            this.memberIsEligible(message, config) &&
             classifierCampaignIsActive(campaign)
         );
     }
@@ -391,6 +402,7 @@ export class BetaResponder {
             active.betaConfig.target_greeting_enabled === true &&
             active.betaConfig.target_greeting_retention_enabled === true &&
             active.llmConfig?.enabled === true &&
+            active.messages.every(message => this.memberIsEligible(message, active.betaConfig)) &&
             classifierCampaignIsActive(active.campaign)
         );
     }
