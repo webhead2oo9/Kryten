@@ -1,4 +1,4 @@
-import type { Message } from "discord.js";
+import { Collection, type Message } from "discord.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { KrytenClient } from "../src/classes/client";
 import { BetaResponder } from "../src/features/betaResponder/betaResponder";
@@ -30,6 +30,125 @@ interface GreetingPayload {
 describe("BetaResponder", () => {
     beforeEach(() => vi.useFakeTimers({ now: new Date("2026-08-12T06:00:00.000Z") }));
     afterEach(() => vi.useRealTimers());
+
+    it.each([
+        ["staff", { roles: ["staff-role"] }],
+        ["helper", { roles: ["helper-role"] }],
+        ["cached staff", { roles: { cache: new Collection([["staff-role", { id: "staff-role" }]]) } }],
+        ["cached helper", { roles: { cache: new Collection([["helper-role", { id: "helper-role" }]]) } }],
+        ["missing member", null],
+    ])("skips %s before greeting or interaction state reads", async (_label, member) => {
+        const send = vi.fn(async () => ({ delete: vi.fn() }) as unknown as Message);
+        const interactions = interactionStore();
+        const classifyLazy = vi.fn(async () => result("KEEP"));
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactions,
+            classifier(classifyLazy),
+            logger(),
+        );
+
+        await responder.process(makeMessage(send, { member }));
+        await responder.drain();
+
+        expect(send).not.toHaveBeenCalled();
+        expect(classifyLazy).not.toHaveBeenCalled();
+        expect(interactions.getCampaignGreeting).not.toHaveBeenCalled();
+        expect(interactions.setCampaignGreeting).not.toHaveBeenCalled();
+        expect(interactions.isUserGeneration).not.toHaveBeenCalled();
+        expect(responder.getMetrics()).toMatchObject({ greetingsSent: 0, submitted: 0, pendingGreetings: 0 });
+    });
+
+    it.each(["staff-role", "helper-role"])("rechecks %s after an awaited store read", async role => {
+        const send = vi.fn(async () => ({ delete: vi.fn() }) as unknown as Message);
+        const roles: string[] = [];
+        let release!: (snapshot: { generation: number }) => void;
+        const snapshot = new Promise<{ generation: number }>(resolve => {
+            release = resolve;
+        });
+        const interactions = interactionStore({ getCampaignGreeting: vi.fn(() => snapshot) });
+        const classifyLazy = vi.fn(async () => result("KEEP"));
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactions,
+            classifier(classifyLazy),
+            logger(),
+        );
+
+        const processing = responder.process(makeMessage(send, { member: { roles } }));
+        expect(interactions.getCampaignGreeting).toHaveBeenCalledOnce();
+        roles.push(role);
+        release({ generation: 3 });
+        await processing;
+        await responder.drain();
+
+        expect(send).not.toHaveBeenCalled();
+        expect(classifyLazy).not.toHaveBeenCalled();
+        expect(interactions.setCampaignGreeting).not.toHaveBeenCalled();
+    });
+
+    it("allows an ordinary member with unrelated roles to greet and classify", async () => {
+        const send = vi.fn(async () => ({ delete: vi.fn() }) as unknown as Message);
+        const interactions = interactionStore();
+        const classifyLazy = vi.fn(async (_fallback, buildTask) => {
+            expect(await buildTask()).not.toBeNull();
+            return result("KEEP");
+        });
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactions,
+            classifier(classifyLazy),
+            logger(),
+        );
+
+        await responder.process(makeMessage(send, { member: { roles: ["ordinary-role"] } }));
+        await responder.drain();
+
+        expect(send).toHaveBeenCalledOnce();
+        expect(interactions.setCampaignGreeting).toHaveBeenCalledOnce();
+        expect(classifyLazy).toHaveBeenCalledOnce();
+        expect(responder.getMetrics().kept).toBe(1);
+    });
+
+    it.each(["staff-role", "helper-role"])("rejects %s follow-ups and revokes queued classifier work", async role => {
+        const send = vi.fn(async () => ({ delete: vi.fn() }) as unknown as Message);
+        const roles: string[] = [];
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        const interactions = interactionStore();
+        let request: unknown;
+        let authorized!: () => boolean;
+        const classifyLazy = vi.fn(async (_fallback, buildTask, isAuthorized) => {
+            authorized = isAuthorized;
+            await gate;
+            request = await buildTask();
+            return result("KEEP");
+        });
+        const responder = new BetaResponder(
+            makeClient({ retention: true }),
+            interactions,
+            classifier(classifyLazy),
+            logger(),
+        );
+        await responder.process(makeMessage(send, { member: { roles } }));
+        expect(authorized()).toBe(true);
+        vi.clearAllMocks();
+        roles.push(role);
+
+        await responder.process(makeMessage(send, { id: "follow-up", member: { roles } }));
+        expect(authorized()).toBe(false);
+        expect(interactions.isUserGeneration).not.toHaveBeenCalled();
+        release();
+        await responder.drain();
+
+        expect(request).toBeNull();
+        expect(classifyLazy).not.toHaveBeenCalled();
+        expect(interactions.getCampaignGreeting).not.toHaveBeenCalled();
+        expect(interactions.setCampaignGreeting).not.toHaveBeenCalled();
+        expect(responder.getMetrics()).toMatchObject({ kept: 0, submitted: 1 });
+    });
 
     it("shares the exact two-message-capped transcript task with shadow without changing KEEP", async () => {
         const send = vi.fn(async () => ({ delete: vi.fn(async () => undefined) }) as unknown as Message);
@@ -651,7 +770,9 @@ describe("BetaResponder", () => {
 function makeClient(options: { retention?: boolean; provider?: "fireworks" | "clef" } = {}): KrytenClient {
     return {
         config: {
+            staff_roles: ["staff-role"],
             beta_classifier: {
+                excluded_role_ids: ["helper-role"],
                 target_greeting_enabled: true,
                 target_greeting_retention_enabled: options.retention ?? false,
                 target_greeting_delete_after_seconds: 45,
@@ -678,7 +799,7 @@ function makeMessage(send: ReturnType<typeof vi.fn>, overrides: Record<string, u
         id: "message-1",
         guildId: "guild-1",
         author: { id: "user-1", bot: false },
-        member: null,
+        member: { roles: [] },
         channelId: "beta-1",
         content: "A message",
         createdTimestamp: 1,
